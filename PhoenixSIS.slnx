@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Phoenix.Core/Phoenix.Core.csproj" />
+    <Project Path="src/Phoenix.Infrastructure/Phoenix.Infrastructure.csproj" />
+    <Project Path="src/Phoenix.Web/Phoenix.Web.csproj" />
+  </Folder>
+</Solution>
