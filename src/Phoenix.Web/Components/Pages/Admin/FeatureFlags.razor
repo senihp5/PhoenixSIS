@@ -1,0 +1,47 @@
+@page "/admin/feature-flags"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+
+<PageTitle>Feature Flags</PageTitle>
+
+<h1>Feature Flags</h1>
+
+<p>
+    Deployment feature configuration, read from the <code>Features</code> section
+    of appsettings.json at startup. Read-only — to change a flag, edit the
+    configuration and restart the application.
+</p>
+
+<table class="table table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Feature</th>
+            <th>State</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var flag in FeatureFlagService.GetAll().Values.OrderBy(f => f.Name))
+        {
+            <tr>
+                <td><strong>@flag.Name</strong></td>
+                <td>
+                    @if (flag.IsEnabled)
+                    {
+                        <span class="badge bg-success">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Disabled</span>
+                    }
+                </td>
+                <td>@flag.Description</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<p class="text-muted">
+    @FeatureFlagService.GetAll().Count features configured —
+    @FeatureFlagService.GetAll().Values.Count(f => f.IsEnabled) enabled.
+</p>
