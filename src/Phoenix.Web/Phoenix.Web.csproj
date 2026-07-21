@@ -1,14 +1,20 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <ProjectReference Include="..\Phoenix.Core\Phoenix.Core.csproj" />
     <ProjectReference Include="..\Phoenix.Infrastructure\Phoenix.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Web" Version="4.13.2" />
+    <PackageReference Include="Microsoft.Identity.Web.UI" Version="4.13.2" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>673484dc-10ec-4c11-bb37-34cbd9213511</UserSecretsId>
   </PropertyGroup>
 
 </Project>

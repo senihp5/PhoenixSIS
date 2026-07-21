@@ -1,8 +1,41 @@
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Identity.Web;
+using Microsoft.Identity.Web.UI;
 using Phoenix.Core.Features;
 using Phoenix.Infrastructure.Features;
 using Phoenix.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Entra ID authentication (PHX-1.5).
+// RoleClaimType = "groups" makes group Object IDs usable with RequireRole,
+// matching the CMS group-GUID RBA model.
+builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApp(options =>
+    {
+        builder.Configuration.GetSection("AzureAd").Bind(options);
+        options.TokenValidationParameters.RoleClaimType = "groups";
+    });
+
+// Sign-in/sign-out endpoints (MicrosoftIdentity/Account/...).
+builder.Services.AddControllersWithViews()
+    .AddMicrosoftIdentityUI();
+
+builder.Services.AddAuthorization(options =>
+{
+    // Admin = member of the PhoenixSIS.Admin Entra security group.
+    options.AddPolicy("RequireAdmin", policy =>
+        policy.RequireRole(
+            builder.Configuration["AzureAd:Groups:Admin"]
+                ?? throw new InvalidOperationException(
+                    "AzureAd:Groups:Admin is not configured.")));
+
+    // Require a signed-in user everywhere by default; endpoints must
+    // opt out explicitly with [AllowAnonymous].
+    options.FallbackPolicy = options.DefaultPolicy;
+});
+
+builder.Services.AddCascadingAuthenticationState();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -28,8 +61,11 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
+app.MapControllers();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
