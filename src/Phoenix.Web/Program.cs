@@ -3,6 +3,7 @@ using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using Phoenix.Core.Features;
 using Phoenix.Infrastructure.Features;
+using Phoenix.Infrastructure.Modules;
 using Phoenix.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,11 +45,17 @@ builder.Services.AddRazorComponents()
 // Phoenix SIS Feature Flag Service (PHX-1.2)
 builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 
+// Module registration (PHX-2.1) — every module's services, flag-gated at init.
+ModuleBootstrapper.RegisterModules(builder.Services, builder.Configuration);
+
 var app = builder.Build();
 
 // Resolve the feature flag service at startup so all feature states
 // are logged immediately, not on first use (PHX-1.2 DoD verification).
 app.Services.GetRequiredService<IFeatureFlagService>();
+
+// Initialize enabled modules (PHX-2.1).
+await ModuleBootstrapper.InitializeModulesAsync(app.Services);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

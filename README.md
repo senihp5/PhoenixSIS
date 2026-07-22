@@ -28,7 +28,7 @@ Microsoft Entra ID (dedicated Phoenix SIS tenant), OpenID Connect via `Microsoft
 
 ## Development setup
 
-Prerequisites: .NET 8 SDK, Visual Studio 2022 (or the dotnet CLI), and access to the Phoenix SIS Entra tenant.
+Prerequisites: .NET 10 SDK (the solution targets net10.0, the current LTS), Visual Studio 2022 (or the dotnet CLI), and access to the Phoenix SIS Entra tenant.
 
 1. Clone the repo.
 
@@ -51,6 +51,10 @@ dotnet run --project src\Phoenix.Web --launch-profile https
 ```
 
 5. Browse to https://localhost:7091 and sign in with a Phoenix SIS tenant account. Admin pages require membership in the `PhoenixSIS.Admin` security group.
+
+## Documentation
+
+Design and planning documents live in `docs\`: `01-Session-Handoffs`, `02-Strategy` (design conversation, stakeholder questionnaires, CMS fit assessment), `03-Architecture` (hybrid architecture design), `04-Planning` (sprint plan, story cards), `05-Execution` (Ed-Fi deployment guide, setup guides), and `retros` (sprint retrospectives).
 
 ## Project management
 
