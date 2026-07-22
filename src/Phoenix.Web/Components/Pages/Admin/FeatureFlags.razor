@@ -1,15 +1,24 @@
 @page "/admin/feature-flags"
 @attribute [Authorize(Policy = "RequireAdmin")]
 @inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IConfiguration Configuration
 
-<PageTitle>Feature Flags</PageTitle>
+<PageTitle>Feature Flags — @DeploymentName</PageTitle>
 
 <h1>Feature Flags</h1>
 
 <p>
+    <strong>Deployment:</strong> @DeploymentName
+    @if (!string.IsNullOrEmpty(DeploymentDescription))
+    {
+        <span class="text-muted"> — @DeploymentDescription</span>
+    }
+</p>
+
+<p>
     Deployment feature configuration, read from the <code>Features</code> section
-    of appsettings.json at startup. Read-only — to change a flag, edit the
-    configuration and restart the application.
+    of configuration at startup. Read-only — to change a flag, edit the
+    active deployment's appsettings overlay and restart the application.
 </p>
 
 <table class="table table-striped align-middle">
@@ -45,3 +54,11 @@
     @FeatureFlagService.GetAll().Count features configured —
     @FeatureFlagService.GetAll().Values.Count(f => f.IsEnabled) enabled.
 </p>
+
+@code {
+    private string DeploymentName =>
+        Configuration["Deployment:Name"] ?? "Phoenix-Dev";
+
+    private string? DeploymentDescription =>
+        Configuration["Deployment:Description"];
+}

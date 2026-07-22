@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="Phoenix.Web.styles.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <title>Phoenix SIS — @DeploymentName</title>
     <HeadOutlet />
 </head>
 
@@ -18,3 +19,11 @@
 </body>
 
 </html>
+
+@code {
+    [Inject]
+    private IConfiguration Configuration { get; set; } = default!;
+
+    private string DeploymentName =>
+        Configuration["Deployment:Name"] ?? "Phoenix-Dev";
+}
