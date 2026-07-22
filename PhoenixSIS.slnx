@@ -4,4 +4,7 @@
     <Project Path="src/Phoenix.Infrastructure/Phoenix.Infrastructure.csproj" />
     <Project Path="src/Phoenix.Web/Phoenix.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Phoenix.ArchitectureTests/Phoenix.ArchitectureTests.csproj" />
+  </Folder>
 </Solution>
