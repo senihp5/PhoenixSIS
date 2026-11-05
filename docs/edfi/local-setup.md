@@ -63,6 +63,13 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 - `_tools\New-EdfiSandbox.ps1` does the whole thing: restores `EdFi_Ods_Sandbox_Phoenix` from the populated-template baseline .bak (FILELISTONLY-driven MOVE, SIMPLE recovery), then in one EdFi_Admin transaction inserts Vendor (+namespace prefixes `uri://ed-fi.org`, `uri://phoenixsis.org`), User, Application (claim set **Ed-Fi Sandbox**, OperationalContextUri is NOT NULL), ApplicationEducationOrganizations (**LEA 255901**), ApiClient (random key/secret, `SecretIsHashed=0` — the API hashes on first auth), ApiClientApplicationEducationOrganizations, OdsInstances (full connection string: 10.10.2.4 as edfi_app), ApiClientOdsInstances. Key/secret land in `C:\temp\edfi-sandbox.ps1` (never in repo/chat). Script ends with OAuth + GET students smoke test.
 - Schema notes (verified live, 7.3.20432 Admin): `ApiClientApplicationEducationOrganizations` DOES exist and is required; `Applications.OperationalContextUri` NOT NULL; claim sets live in `EdFi_Security.dbo.ClaimSets`.
 
+## PHX-3.6 — Reset script + sprint close ✅ DONE 2026-11-05
+
+- `_tools\Reset-EdfiSandbox.ps1` tears the sandbox down (EdFi_Admin rows in FK-safe order + DROP the sandbox ODS single-user) and rebuilds it by invoking `New-EdfiSandbox.ps1`. Verified full cycle: reset → smoke test (3 students) → `Test-EdfiStudentCrud.ps1` 10/10 against the rebuilt sandbox.
+- **Delete order matters — discovered from `sys.foreign_keys`, not assumed.** Children of ApiClients include **ClientAccessTokens** and **ApiClientOwnershipTokens** (easy to miss — OAuth tokens created during smoke/CRUD tests FK back to the ApiClient); children of Applications include **ProfileApplications**; children of OdsInstances include **OdsInstanceContexts** and **OdsInstanceDerivatives**. First teardown attempt failed on FK_ClientAccessTokens_ApiClients because the token rows were not cleared first.
+- Scope guard: all deletes are keyed to the single matching Vendor (`Phoenix SIS`) and OdsInstance (`EdFi_Ods_Sandbox_Phoenix`) — never a blanket wipe of EdFi_Admin.
+- **Sprint 3 CLOSED** — tag `phoenix-sprint-03`. Retro: `docs\retros\sprint-03.md`.
+
 ## PHX-3.5 — Student CRUD ✅ DONE 2026-11-05 (10/10 via `_tools\Test-EdfiStudentCrud.ps1`)
 
 - Full cycle verified against `EdFi_Ods_Sandbox_Phoenix`: POST student (201) → POST studentSchoolAssociation (201) → GET by id → PUT middleName (204) → GET verify → DELETE association (204) → DELETE student (204) → GET 404. Script doubles as the PHX-3.6 regression test.
