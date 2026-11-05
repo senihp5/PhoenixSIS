@@ -1,0 +1,121 @@
+@page "/admin/migration"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.DataMigration
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject ISisSourceConnector Source
+@inject IMigrationService Migration
+
+<PageTitle>Data Migration</PageTitle>
+
+<h1>Data Migration</h1>
+
+@if (!FeatureFlagService.IsEnabled("Migration"))
+{
+    <div class="alert alert-info">
+        <h4>Data Migration Not Enabled</h4>
+        <p>
+            This wizard requires the <code>Migration</code> module. Enable it in
+            the active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else
+{
+    <p>
+        Source: <strong>@Source.DisplayName</strong>
+        (system <code>@Source.SourceSystem</code>)
+    </p>
+    <p class="text-muted">
+        <strong>Preview</strong> classifies every source record without writing.
+        <strong>Apply</strong> imports into Phoenix through the identity service —
+        idempotent, so re-running matches existing students instead of duplicating.
+    </p>
+
+    <div class="mb-3">
+        <button class="btn btn-outline-primary me-2" @onclick="() => RunAsync(false)" disabled="@_busy">
+            Preview (dry run)
+        </button>
+        <button class="btn btn-primary" @onclick="() => RunAsync(true)" disabled="@_busy">
+            Apply
+        </button>
+    </div>
+
+    @if (_busy)
+    {
+        <p><em>Running…</em></p>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger"><pre class="mb-0">@_error</pre></div>
+    }
+    else if (_result is not null)
+    {
+        <div class="alert @(_result.Applied ? "alert-success" : "alert-secondary")">
+            <strong>@(_result.Applied ? "Applied" : "Dry run")</strong> —
+            @_result.Total record(s):
+            @_result.Created @(_result.Applied ? "created" : "would be created"),
+            @_result.Matched @(_result.Applied ? "matched" : "would match").
+        </div>
+
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>External ID</th>
+                    <th>Name</th>
+                    <th>Outcome</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _result.Rows)
+                {
+                    <tr>
+                        <td><code>@row.ExternalId</code></td>
+                        <td>@row.DisplayName</td>
+                        <td>@Label(row.Action)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private MigrationResult? _result;
+    private string? _error;
+    private bool _busy;
+
+    private async Task RunAsync(bool apply)
+    {
+        if (!FeatureFlagService.IsEnabled("Migration"))
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _result = await Migration.RunAsync(Source, apply);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _result = null;
+        }
+
+        _busy = false;
+    }
+
+    private string Label(MigrationAction action)
+    {
+        var applied = _result?.Applied == true;
+        return action switch
+        {
+            MigrationAction.Created => applied ? "Created" : "Would create",
+            MigrationAction.Matched => applied ? "Matched" : "Would match",
+            _ => action.ToString()
+        };
+    }
+}
