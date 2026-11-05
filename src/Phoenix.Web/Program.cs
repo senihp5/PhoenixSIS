@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using Phoenix.Core.Features;
+using Phoenix.Infrastructure.Data;
 using Phoenix.Infrastructure.Features;
 using Phoenix.Infrastructure.Modules;
 using Phoenix.Web.Components;
@@ -54,6 +56,12 @@ builder.Services.AddRazorComponents()
 
 // Phoenix SIS Feature Flag Service (PHX-1.2)
 builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
+
+// Phoenix application database (PHX-5.1) — EF Core on the NH SQL VM.
+// Connection string lives in user-secrets locally (App Service settings when
+// deployed); the canonical student store is core, so it is always registered.
+builder.Services.AddDbContext<PhoenixDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("PhoenixDb")));
 
 // Module registration (PHX-2.1) — every module's services, flag-gated at init.
 ModuleBootstrapper.RegisterModules(builder.Services, builder.Configuration);
