@@ -38,7 +38,7 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 
 ### Post-Phase-A tasks
 
-- [ ] Baseline backups of the four EdFi_* databases (→ feeds `scripts\reset-edfi.ps1`)
+- [x] Baseline backups of the four EdFi_* databases (→ feeds `scripts\reset-edfi.ps1`) — DONE 2026-11-05, see rebuild log below
 - [ ] After WebApi runs: downgrade `edfi_app` from sysadmin to db_owner on EdFi_* only
 - [ ] After sprint: delete `C:\Temp\EdFi.*` (contains the edfi_app password in configuration.json); rotate exposed passwords (edfi_app, decisioned-admin appeared in console/chat)
 
@@ -48,3 +48,14 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 - [ ] App Service settings: connection strings → `10.10.2.4` as `edfi_app`, sandbox mode config
 - [ ] Zip deploy; discovery endpoint + Swagger verify
 - Walls & fixes log: *(append as encountered)*
+
+---
+
+## 2026-11-05 rebuild (reactivation) — Phase A re-run results
+
+- `_tools\New-EdfiLogin.ps1` recreated `edfi_app` (new random password stored in `C:\temp\edfi-sql.ps1` on phines-p16; sysadmin TEMPORARY). Admin credential pulled from Key Vault `kv-decisioned-prod` secret `sql-admin-password` at runtime — no secrets in chat, console, or repo.
+- `_tools\Run-EdfiPhaseA.ps1` ran on the VM: latest 7.3.x package auto-resolved from the Ed-Fi feed, `configuration.json` patched and JSON-validated programmatically (wall #5 is now impossible), deployment clean on first run.
+- **NEW WALL #6:** `dotnet` not found in a fresh VM shell — `dotnet-install.ps1` does not register machine-wide PATH. Fix: `$env:Path = "C:\Program Files\dotnet;$env:Path"` in the session (reinstall with the same script first if the folder is actually gone).
+- **Baselines DONE (mandatory item closed):** `_tools\Backup-EdfiBaseline.ps1` set SIMPLE recovery and wrote `E:\backups\EdFi_*_baseline.bak` for all four. Sizes: Admin 16 MB, Security 16 MB, Ods_Minimal_Template 208 MB, Ods_Populated_Template 976 MB.
+- PHX-3.2 also re-verified same day: tcpping 4/4 from both apps, DNS/cert/https 200 on phoenix.newheightsed.com, VNet route-all settings confirmed.
+- Still open: downgrade `edfi_app` from sysadmin after Phase B; delete `C:\Temp\EdFiRebuild`, `C:\Temp\Run-EdfiPhaseA.ps1`, `C:\Temp\dotnet-install.ps1` on the VM; add deny-all/IP access restriction on `nh-edfi-cus` BEFORE the WebApi goes live; rotate the PhoenixSIS-Dev Entra client secret (~Jan expiry).
