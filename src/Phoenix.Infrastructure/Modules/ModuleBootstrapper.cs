@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Phoenix.Core.Features;
 using Phoenix.Core.Modules;
+using Phoenix.Infrastructure.EdFi;
 
 namespace Phoenix.Infrastructure.Modules;
 
@@ -14,7 +15,8 @@ public static class ModuleBootstrapper
     /// </summary>
     private static readonly IModule[] Modules =
     [
-        new CoreModule()
+        new CoreModule(),
+        new EdFiModule()
     ];
 
     /// <summary>
