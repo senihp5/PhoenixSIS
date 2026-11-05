@@ -73,3 +73,27 @@ Executed work drifted from the v1.1 numbering because the executed **Sprint 3** 
 | … | S8+ | unchanged |
 
 **Why reslot Texas descriptors:** product-owner decision 2026-11-05. The module scaffold (S5) is higher demo value and has no hardening dependency, so it goes first; Texas descriptors are invisible in a demo but must exist before a *real* sync carries TEDS-conformant data, so they sit immediately before Sprint 7. The national GrandBend sample already in the sandbox is enough to build the module against in the meantime. See `docs\integrations\texas-tsds-requirements.md`.
+
+---
+
+## Addendum v1.3 (2026-11-05) — identity/persistence decision + Data Migration epic
+
+Product-owner direction when starting Sprint 5 reshaped the identity work and added a new epic:
+
+- **Clean-room schema (ADR-002):** Phoenix uses Phoenix-native naming. No source SIS's structure (explicitly *not* PowerSchool's) infects Phoenix. Sources are translated at the boundary (anti-corruption layer).
+- **Mapping-based identity:** one canonical Phoenix `Student`; external IDs (Ed-Fi, PowerSchool, TSDS, …) live in a `StudentIdentifier` mapping table. Adding a source = adding rows, not reshaping schema.
+- **Persistence:** EF Core, tables on the **NH VM SQL server (10.10.2.4)**, new `PhoenixSIS` database (consistent with the Ed-Fi same-VM decision — no local SQL horsepower).
+- **New Epic 4 — Data Migration & Clean-Room Identity (`epic:data-migration`):** a source-agnostic migration wizard that connects a source SIS to PhoenixSIS and maps it into the clean schema, built so other SIS's plug in later. Multi-sprint.
+
+Reconciled forward map:
+
+| Executed sprint | Content |
+|---|---|
+| Sprint 4 ✅ | EdFi module scaffold + API client |
+| **Sprint 5** (now) | **Student identity model + migration foundation** (PHX-5.1–5.5): clean schema, resolution service, EF Core on VM, source-agnostic pipeline proven against a sample source. Live PowerSchool connector deferred. |
+| Sprint 6 | Texas descriptors + TEDS-shaped sample data (reslotted S4) |
+| Sprint 7 | First student sync (Phoenix → Ed-Fi) |
+| Later, under epic:data-migration | Live PowerSchool connector; full wizard UX; additional source connectors |
+| … | Portal, AdultEd, prototype — unchanged |
+
+*Sprint 5 story cards: `Sprint-5-Story-Cards.md` in this folder.*
