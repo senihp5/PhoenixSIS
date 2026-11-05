@@ -42,12 +42,21 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 - [ ] After WebApi runs: downgrade `edfi_app` from sysadmin to db_owner on EdFi_* only
 - [ ] After sprint: delete `C:\Temp\EdFi.*` (contains the edfi_app password in configuration.json); rotate exposed passwords (edfi_app, decisioned-admin appeared in console/chat)
 
-## PHX-3.3 Phase B — WebApi to nh-edfi-cus (next)
+## PHX-3.3 Phase B — WebApi to nh-edfi-cus ✅ DONE 2026-11-05
 
-- [ ] Obtain `EdFi.Suite3.Ods.WebApi.Standard.6.1.0` v7.3.20297 from the EdFi Azure Artifacts feed
-- [ ] App Service settings: connection strings → `10.10.2.4` as `edfi_app`, sandbox mode config
-- [ ] Zip deploy; discovery endpoint + Swagger verify
-- Walls & fixes log: *(append as encountered)*
+- [x] Package `EdFi.Suite3.Ods.WebApi.Standard.6.1.0` **v7.3.20432** (latest 7.3.x) from the EdFi Azure Artifacts feed
+- [x] App Service settings: `ConnectionStrings__EdFi_Admin|EdFi_Security|EdFi_Master` → `10.10.2.4` as `edfi_app`, SQL auth, `Encrypt=false`
+- [x] Zip deploy via `az webapp deploy` (root of extracted package, minus `_rels`/`package`/`[Content_Types].xml`/`.nuspec`)
+- [x] Verified: discovery `/` (7.3.20432.0), `/metadata/data/v3/dependencies` (474), resources + descriptors swagger.json, `/metadata/` (4 sections: Enrollment, Change-Queries, Descriptors, Resources), `/oauth/token` reachable (invalid_client on bogus creds = EdFi_Admin connectivity proven through the VNet)
+
+### Phase B walls & fixes
+
+7. **App Service worker runs 32-bit even with `use32BitWorkerProcess=false`** (S2 plan; cause not resolved — field not exposed by Kudu, and a hard stop/start did not flip it). This surfaced the next wall.
+8. **`GET /metadata/` → HTTP 500, `System.PlatformNotSupportedException` at `Standart.Hash.xxHash.xxHash3.ComputeHash` → `Bmi2.X64.MultiplyNoFlags`.** Root cause: `Standart.Hash.xxHash` 4.0.5 (shipped in the WebApi) guards with `if (Bmi2.IsSupported)` — true in a 32-bit process — then calls `Bmi2.X64.MultiplyNoFlags`, which is NOT supported in 32-bit → throws for any hash input ≥ 17 bytes (short inputs use a different path, which is why discovery/dependencies worked but the Profiles-backed OpenApi metadata did not). It is a library bug (checks `Bmi2` but uses `Bmi2.X64`), triggered by the 32-bit worker.
+   - **FIX THAT WORKS:** app setting **`DOTNET_EnableHWIntrinsic=0`** (the runtime's master hardware-intrinsic switch). Forces all `*.IsSupported` to false → scalar path → no `Bmi2.X64` call. Requires a hard stop/start.
+   - **DOES NOT WORK:** `DOTNET_EnableBMI2=0` — the fine-grained per-ISA `DOTNET_Enable{ISA}` knobs are debug-build-only; retail .NET ignores them (confirmed present in the worker's own environment yet still threw).
+   - **Better long-term fix:** get the worker genuinely 64-bit (then `Bmi2.X64` works natively and we drop the intrinsic penalty). Ed-Fi is memory-hungry, so 64-bit also avoids the ~2 GB 32-bit ceiling — revisit when back on site (wall #7).
+- **Still open:** IP lockdown on nh-edfi-cus (deferred to next week, on site — API is public with only OAuth until then; load NO real data before lockdown); resolve the 32-bit worker (wall #7) and then remove `DOTNET_EnableHWIntrinsic=0`; downgrade `edfi_app` from sysadmin to db_owner on EdFi_* ; PHX-3.4 (OAuth/Postman with a real sandbox key — note SandboxAdmin is not yet deployed), 3.5 (student CRUD), 3.6 (reset/docs/close).
 
 ---
 
