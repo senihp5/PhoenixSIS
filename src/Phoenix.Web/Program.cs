@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using Phoenix.Core.Features;
+using Phoenix.Core.Students;
 using Phoenix.Infrastructure.Data;
 using Phoenix.Infrastructure.Features;
 using Phoenix.Infrastructure.Modules;
+using Phoenix.Infrastructure.Students;
 using Phoenix.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -62,6 +64,9 @@ builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 // deployed); the canonical student store is core, so it is always registered.
 builder.Services.AddDbContext<PhoenixDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("PhoenixDb")));
+
+// Canonical student identity resolution (PHX-5.3) — core, always registered.
+builder.Services.AddScoped<IStudentIdentityService, StudentIdentityService>();
 
 // Module registration (PHX-2.1) — every module's services, flag-gated at init.
 ModuleBootstrapper.RegisterModules(builder.Services, builder.Configuration);
