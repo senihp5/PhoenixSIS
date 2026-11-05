@@ -56,3 +56,20 @@ Advising, Reports, IdCard, and TimeClock were "existing" modules in v1.0 — fre
 | Backlog | — | CMS-parity modules (clean-room): Advising, Reports, IdCard, TimeClock |
 
 *Sprint 2 story cards: `Sprint-2-Story-Cards.md` in this folder.*
+
+---
+
+## Addendum v1.2 (2026-11-05) — executed-sprint reconciliation + Texas reslot
+
+Executed work drifted from the v1.1 numbering because the executed **Sprint 3** overdelivered: it covered the amendment's Sprint 3 (Ed-Fi ODS deployment) **and** got the API running, a sample-loaded sandbox, OAuth, and student CRUD (PHX-3.1–3.6, tag `phoenix-sprint-03`). Reconciled map going forward:
+
+| Executed sprint | Amendment rows covered | Content |
+|---|---|---|
+| Sprint 3 ✅ | S3 + most of S4 | Ed-Fi ODS/API on NH-pilot infra, sandbox, CRUD |
+| **Sprint 4** (now) | S5 (pulled forward) | **EdFi module scaffold + API client** (PHX-4.1–4.5) |
+| Sprint 5 (next) | S6 | Student identity model |
+| Sprint 6 | **S4 reslotted** | **Texas descriptors + TEDS-shaped sample data** — moved here so it lands *before* the first real sync |
+| Sprint 7 | S7 | First student sync (seeded Phoenix data → Ed-Fi) |
+| … | S8+ | unchanged |
+
+**Why reslot Texas descriptors:** product-owner decision 2026-11-05. The module scaffold (S5) is higher demo value and has no hardening dependency, so it goes first; Texas descriptors are invisible in a demo but must exist before a *real* sync carries TEDS-conformant data, so they sit immediately before Sprint 7. The national GrandBend sample already in the sandbox is enough to build the module against in the meantime. See `docs\integrations\texas-tsds-requirements.md`.
