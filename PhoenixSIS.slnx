@@ -6,5 +6,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Phoenix.ArchitectureTests/Phoenix.ArchitectureTests.csproj" />
+    <Project Path="tests/Phoenix.Infrastructure.Tests/Phoenix.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
