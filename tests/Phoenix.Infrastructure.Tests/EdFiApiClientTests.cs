@@ -38,6 +38,21 @@ public class EdFiApiClientTests
     }
 
     [Fact]
+    public async Task GetStudentsAsync_maps_students_and_sends_bearer()
+    {
+        var handler = new StubHandler();
+        var client = CreateClient(handler, enabled: true);
+
+        var students = await client.GetStudentsAsync(25);
+
+        Assert.Equal(2, students.Count);
+        Assert.Equal("100001", students[0].StudentUniqueId);
+        Assert.Equal("Lisa", students[0].FirstName);
+        Assert.Equal("Woods", students[0].LastSurname);
+        Assert.Equal("test-token-123", handler.LastBearer); // authenticated call
+    }
+
+    [Fact]
     public async Task Methods_throw_when_flag_disabled()
     {
         var handler = new StubHandler();
@@ -45,6 +60,7 @@ public class EdFiApiClientTests
 
         await Assert.ThrowsAsync<FeatureNotEnabledException>(() => client.GetApiInfoAsync());
         await Assert.ThrowsAsync<FeatureNotEnabledException>(() => client.GetAccessTokenAsync());
+        await Assert.ThrowsAsync<FeatureNotEnabledException>(() => client.GetStudentsAsync(25));
         Assert.Equal(0, handler.TokenRequests);
     }
 
@@ -82,6 +98,7 @@ public class EdFiApiClientTests
     private sealed class StubHandler : HttpMessageHandler
     {
         public int TokenRequests { get; private set; }
+        public string? LastBearer { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -93,6 +110,18 @@ public class EdFiApiClientTests
                 TokenRequests++;
                 return Task.FromResult(Json(
                     "{\"access_token\":\"test-token-123\",\"expires_in\":1800,\"token_type\":\"bearer\"}"));
+            }
+
+            if (path.Equals("data/v3/ed-fi/students", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Headers.Authorization is { Scheme: "Bearer" } auth)
+                {
+                    LastBearer = auth.Parameter;
+                }
+
+                return Task.FromResult(Json(
+                    "[{\"studentUniqueId\":\"100001\",\"firstName\":\"Lisa\",\"lastSurname\":\"Woods\",\"birthDate\":\"2005-03-01\"}," +
+                    "{\"studentUniqueId\":\"100002\",\"firstName\":\"Omar\",\"lastSurname\":\"Vega\",\"birthDate\":\"2004-11-20\"}]"));
             }
 
             // discovery root

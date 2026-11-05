@@ -1,0 +1,107 @@
+@page "/admin/edfi/students"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Modules.EdFi
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IEdFiApiClient EdFiClient
+
+<PageTitle>Ed-Fi Students</PageTitle>
+
+<h1>Ed-Fi Students</h1>
+
+@if (!FeatureFlagService.IsEnabled("EdFi"))
+{
+    <div class="alert alert-info">
+        <h4>Ed-Fi Integration Not Enabled</h4>
+        <p>
+            This page requires the <code>EdFi</code> module. Enable it in the
+            active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else
+{
+    <p>First @Limit students read live from the connected ODS.</p>
+    <p class="text-muted">
+        Relationship-based authorization: only students associated with a
+        school under this API client's education organization are returned.
+    </p>
+
+    <button class="btn btn-outline-primary mb-3" @onclick="LoadAsync" disabled="@_busy">
+        @(_busy ? "Loading…" : "Reload")
+    </button>
+
+    @if (_busy)
+    {
+        <p><em>Loading…</em></p>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger">
+            <strong>Could not load students.</strong>
+            <pre class="mb-0">@_error</pre>
+        </div>
+    }
+    else if (_students is { Count: 0 })
+    {
+        <p class="text-muted">No students returned.</p>
+    }
+    else if (_students is not null)
+    {
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Unique ID</th>
+                    <th>First name</th>
+                    <th>Last surname</th>
+                    <th>Birth date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in _students)
+                {
+                    <tr>
+                        <td><code>@s.StudentUniqueId</code></td>
+                        <td>@s.FirstName</td>
+                        <td>@s.LastSurname</td>
+                        <td>@s.BirthDate</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="text-muted">@_students.Count student(s).</p>
+    }
+}
+
+@code {
+    private const int Limit = 25;
+
+    private IReadOnlyList<EdFiStudentSummary>? _students;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (!FeatureFlagService.IsEnabled("EdFi"))
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _students = await EdFiClient.GetStudentsAsync(Limit);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _students = null;
+        }
+
+        _busy = false;
+    }
+}

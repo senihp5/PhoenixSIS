@@ -112,6 +112,35 @@ public sealed class EdFiApiClient : IEdFiApiClient
         }
     }
 
+    public async Task<IReadOnlyList<EdFiStudentSummary>> GetStudentsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        _features.RequireEnabled(FeatureFlag);
+
+        var safeLimit = Math.Clamp(limit, 1, 500);
+        var token = await GetAccessTokenAsync(cancellationToken);
+        var client = CreateClient();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"data/v3/ed-fi/students?limit={safeLimit}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var students = await response.Content
+            .ReadFromJsonAsync<List<StudentResource>>(cancellationToken) ?? [];
+
+        return students
+            .Select(s => new EdFiStudentSummary(
+                s.StudentUniqueId ?? string.Empty,
+                s.FirstName ?? string.Empty,
+                s.LastSurname ?? string.Empty,
+                s.BirthDate))
+            .ToList();
+    }
+
     private bool TryGetCachedToken(out string token)
     {
         if (_cachedToken is not null
@@ -156,4 +185,10 @@ public sealed class EdFiApiClient : IEdFiApiClient
         [property: JsonPropertyName("access_token")] string? AccessToken,
         [property: JsonPropertyName("expires_in")] int ExpiresIn,
         [property: JsonPropertyName("token_type")] string? TokenType);
+
+    private sealed record StudentResource(
+        [property: JsonPropertyName("studentUniqueId")] string? StudentUniqueId,
+        [property: JsonPropertyName("firstName")] string? FirstName,
+        [property: JsonPropertyName("lastSurname")] string? LastSurname,
+        [property: JsonPropertyName("birthDate")] string? BirthDate);
 }

@@ -19,4 +19,13 @@ public interface IEdFiApiClient
     /// expires. Returns the access token string.
     /// </summary>
     Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads up to <paramref name="limit"/> students from the ODS. Only
+    /// students the caller's claim set is authorized to see are returned
+    /// (relationship-based authorization).
+    /// </summary>
+    Task<IReadOnlyList<EdFiStudentSummary>> GetStudentsAsync(
+        int limit,
+        CancellationToken cancellationToken = default);
 }

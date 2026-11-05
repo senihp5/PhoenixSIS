@@ -35,6 +35,9 @@ public class EdFiApiClientLiveSmoke
 
         var token = await client.GetAccessTokenAsync();
         Assert.False(string.IsNullOrWhiteSpace(token));
+
+        var students = await client.GetStudentsAsync(3);
+        Assert.NotNull(students);
     }
 
     private sealed class RealFactory : IHttpClientFactory
