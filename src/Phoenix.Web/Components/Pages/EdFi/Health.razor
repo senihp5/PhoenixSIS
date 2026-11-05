@@ -1,0 +1,121 @@
+@page "/admin/edfi/health"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Modules.EdFi
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IEdFiApiClient EdFiClient
+
+<PageTitle>Ed-Fi Health</PageTitle>
+
+<h1>Ed-Fi Health</h1>
+
+@if (!FeatureFlagService.IsEnabled("EdFi"))
+{
+    <div class="alert alert-info">
+        <h4>Ed-Fi Integration Not Enabled</h4>
+        <p>
+            This page requires the <code>EdFi</code> module. Enable it in the
+            active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else
+{
+    <p>Live status of the connected Ed-Fi ODS/API.</p>
+
+    <button class="btn btn-outline-primary mb-3" @onclick="CheckAsync" disabled="@_busy">
+        @(_busy ? "Checking…" : "Recheck")
+    </button>
+
+    <div class="card mb-3">
+        <div class="card-header">Reachability (discovery endpoint)</div>
+        <div class="card-body">
+            @if (_info is not null)
+            {
+                <p class="mb-2"><span class="badge bg-success">Reachable</span></p>
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">Version</dt>
+                    <dd class="col-sm-9">@_info.Version</dd>
+                    <dt class="col-sm-3">Build</dt>
+                    <dd class="col-sm-9">@_info.Build</dd>
+                    <dt class="col-sm-3">Data models</dt>
+                    <dd class="col-sm-9">@_info.DataModels</dd>
+                </dl>
+            }
+            else if (_error is not null)
+            {
+                <p class="mb-2"><span class="badge bg-danger">Unreachable</span></p>
+                <pre class="text-danger mb-0">@_error</pre>
+            }
+            else
+            {
+                <p class="mb-0 text-muted">Not checked yet.</p>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Authentication (OAuth client credentials)</div>
+        <div class="card-body">
+            @if (_authOk == true)
+            {
+                <p class="mb-0"><span class="badge bg-success">Token acquired</span></p>
+            }
+            else if (_authOk == false)
+            {
+                <p class="mb-2"><span class="badge bg-danger">Auth failed</span></p>
+                <pre class="text-danger mb-0">@_authError</pre>
+            }
+            else
+            {
+                <p class="mb-0 text-muted">Not checked yet.</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private EdFiApiInfo? _info;
+    private string? _error;
+    private bool? _authOk;
+    private string? _authError;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await CheckAsync();
+
+    private async Task CheckAsync()
+    {
+        if (!FeatureFlagService.IsEnabled("EdFi"))
+        {
+            return;
+        }
+
+        _busy = true;
+        _info = null;
+        _error = null;
+        _authOk = null;
+        _authError = null;
+
+        try
+        {
+            _info = await EdFiClient.GetApiInfoAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+
+        try
+        {
+            await EdFiClient.GetAccessTokenAsync();
+            _authOk = true;
+        }
+        catch (Exception ex)
+        {
+            _authOk = false;
+            _authError = ex.Message;
+        }
+
+        _busy = false;
+    }
+}
