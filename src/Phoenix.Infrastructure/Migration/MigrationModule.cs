@@ -18,6 +18,7 @@ public class MigrationModule : IModule
         // flag-guarded wizard page invokes them.
         services.AddScoped<IMigrationService, MigrationService>();
         services.AddScoped<ISisSourceConnector, SampleSourceConnector>();
+        services.AddScoped<ISisSourceConnector, TexasSampleSourceConnector>();
     }
 
     public Task InitializeAsync(IServiceProvider services, ILogger logger)
