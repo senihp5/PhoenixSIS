@@ -5,9 +5,9 @@
 **Total Estimated Hours:** 14-20
 **Epic:** Epic 3 — EdFi Integration Module (`epic:edfi-module`)
 
-**Modeling decisions (2026-11-06, stated — not blocking):**
-- **studentUniqueId** = the Phoenix student's primary source identifier value (e.g. the `TexasSample` `NH-24001`). Readable and stable; Phoenix stays the hub.
-- After a successful push, record an **`Ed-Fi`** identifier (= that studentUniqueId) on the Phoenix student via `IStudentIdentityService.AddIdentifierAsync` — the mapping table now links Phoenix ↔ Ed-Fi.
+**Modeling decisions (2026-11-06, product owner):**
+- **studentUniqueId** = a **Phoenix-generated, readable, source-independent id** (`PHX-000001`, `PHX-000002`, …), distinct from the source id. The mapping table then bridges three schemes (source `TexasSample:NH-24001` ↔ canonical Phoenix student ↔ `Ed-Fi:PHX-000001`) and decouples Ed-Fi from any one source's numbering — the ADR-002 thesis made visible.
+- The Phoenix id is assigned once and stored as the `Ed-Fi` identifier on the student via `IStudentIdentityService.AddIdentifierAsync` on first sync; later syncs reuse it (stable, sequential — not a GUID).
 - **Target campus** = schoolId **220822001** (seeded in 6.2), configurable; entry grade level **Adult Education**, a sample entry date.
 - **Scope of a run** = all Phoenix students (we only have the Texas sample set); idempotent, so re-sync matches.
 
@@ -43,7 +43,7 @@ As the developer, I want a service that pushes Phoenix students to Ed-Fi and rec
 
 ### Tasks
 - [ ] `IStudentSyncService` (Core): `SyncAllAsync(long schoolId, bool apply, CancellationToken)` → `StudentSyncResult`
-- [ ] Impl (Infrastructure, EdFi area): read Phoenix `Student`s (+ identifiers) from `PhoenixDbContext`; pick studentUniqueId = primary source identifier; **apply**: UpsertStudent → UpsertStudentSchoolAssociation(school, Adult Education, entryDate) → `AddIdentifierAsync(studentId, "Ed-Fi", uniqueId)`; **dry-run**: classify would-sync/already-synced (student already has an `Ed-Fi` identifier) with no writes
+- [ ] Impl (Infrastructure, EdFi area): read Phoenix `Student`s (+ identifiers) from `PhoenixDbContext`; **studentUniqueId** = the student's existing `Ed-Fi` identifier if present, else a newly assigned `PHX-NNNNNN` (sequential, stable); **apply**: UpsertStudent → UpsertStudentSchoolAssociation(school, Adult Education, entryDate) → `AddIdentifierAsync(studentId, "Ed-Fi", uniqueId)` (records the PHX id on first sync); **dry-run**: classify would-sync/already-synced (student already has an `Ed-Fi` identifier) with no writes
 - [ ] `StudentSyncResult` (Core): per-student outcome (Synced / AlreadySynced / Failed+reason) + counts
 - [ ] Idempotent: re-run → AlreadySynced (Ed-Fi upsert + AddIdentifier both idempotent); flag-guarded
 - [ ] Unit tests (InMemory Phoenix + fake IEdFiApiClient): apply creates + records identifier; re-run is AlreadySynced; a write failure is captured per-student, not fatal
