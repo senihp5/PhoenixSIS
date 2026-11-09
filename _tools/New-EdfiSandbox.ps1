@@ -30,7 +30,7 @@ param(
     [string]$ClaimSet = 'Ed-Fi Sandbox',
     [long[]]$EdOrgIds = @(255901),
     [string]$VendorName = 'Phoenix SIS',
-    [string]$UserEmail = 'patrick@phoenixsis.onmicrosoft.com',
+    [string]$UserEmail = 'Patrick.Hines@PhoenixSIS.onmicrosoft.com',
     [string]$UserFullName = 'Patrick Hines',
     [string]$ApiBase = 'https://nh-edfi-cus.azurewebsites.net',
     [string]$OdsServerForApi = '10.10.2.4',

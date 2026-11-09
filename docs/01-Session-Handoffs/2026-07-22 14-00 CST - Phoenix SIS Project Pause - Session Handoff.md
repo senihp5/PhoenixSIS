@@ -23,7 +23,7 @@ A purpose-built Student Information System for Adult High School students (New H
 ## 3. Locked decisions (do not re-litigate on resume)
 
 1. **Clean-room repo** `F:\Github\PhoenixSIS` / `senihp5/PhoenixSIS`; CMS code never ported. `main` only branch; incomplete work behind flags; main always builds; tag `phoenix-sprint-NN` per sprint.
-2. **Dedicated Entra tenant** `phoenixsis.onmicrosoft.com` (tenant `b9221ae6-0702-49b0-9d96-3e7a0a3e33aa`) — **KEPT at pause** (free, painful to rebuild). App reg **PhoenixSIS-Dev** client `1fdd8ec2-b221-46ef-9208-dfc8405d57ae`; group **PhoenixSIS.Admin** `cf1f69d0-dee9-4a0e-94e4-8a1eb0a00add`; admin `patrick@phoenixsis.onmicrosoft.com`. Client secret in dotnet user-secrets on Patrick's machine (expires ~2027-01 — **regenerate on resume if past that**).
+2. **Dedicated Entra tenant** `phoenixsis.onmicrosoft.com` (tenant `b9221ae6-0702-49b0-9d96-3e7a0a3e33aa`) — **KEPT at pause** (free, painful to rebuild). App reg **PhoenixSIS-Dev** client `1fdd8ec2-b221-46ef-9208-dfc8405d57ae`; group **PhoenixSIS.Admin** `cf1f69d0-dee9-4a0e-94e4-8a1eb0a00add`; admin `Patrick.Hines@PhoenixSIS.onmicrosoft.com`. Client secret in dotnet user-secrets on Patrick's machine (expires ~2027-01 — **regenerate on resume if past that**).
 3. **.NET 10 LTS**, all projects net10.0.
 4. **Ed-Fi: ODS/API 7.3.x**, binary deploy (SQL Server Docker path is experimental), Data Standard 6.1 current.
 5. **NH pilot posture** (2026-07-22): hosting on New Heights infra as pilot/design-partner instance; IP clarification deferred by Patrick — risk register: Very High. On resume, re-decide hosting (NH infra again vs personal Azure).
