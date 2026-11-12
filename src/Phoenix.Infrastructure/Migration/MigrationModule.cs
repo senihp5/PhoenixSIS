@@ -19,6 +19,7 @@ public class MigrationModule : IModule
         services.AddScoped<IMigrationService, MigrationService>();
         services.AddScoped<ISisSourceConnector, SampleSourceConnector>();
         services.AddScoped<ISisSourceConnector, TexasSampleSourceConnector>();
+        services.AddScoped<ISisSourceConnector, FlightdeckSourceConnector>();
     }
 
     public Task InitializeAsync(IServiceProvider services, ILogger logger)
