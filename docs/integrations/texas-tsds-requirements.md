@@ -67,6 +67,29 @@ TSDSDeployment@tea.texas.gov and ask:
    before first live PEIMS submission?
 3. Where is new-vendor API onboarding documented (TWEDS API overview access)?
 
+## 4a. Third-party vendor reframing (2026-11-11)
+
+Phoenix is being developed independently - own repos and accounts, clean-room from CMS
+(ADR-001). That reframes the open question above. Instead of the undocumented path ("can
+an LEA register its own in-house build?"), the system can approach TSDS as a **commercial
+third-party SIS vendor** - the documented, routine path: register as a source-system
+vendor, pursue Ed-Fi API certification and onboarding (likely via the Texas Education
+Exchange), obtain per-LEA Key/Secret, and clear L1-L3 validations. The paperwork TEA
+already has is written for exactly this.
+
+Two things do not change:
+
+1. **A vendor never submits on its own behalf.** TSDS data belongs to an LEA. Live
+   submission requires a client LEA authorizing the vendor's product for that LEA's ODS.
+   New Heights becomes the prospective design-partner / first pilot LEA, not "the
+   builder."
+2. **Dual-role caveat (not legal advice).** Patrick is both New Heights' IT Director and
+   the independent vendor - a related-party arrangement. It needs written IP and
+   vendor/customer clarity with New Heights (the long-open "IP clarification," Very High)
+   before any pilot, ideally reviewed by counsel.
+
+The TEA email (`tea-vendor-inquiry-email.md`) is rewritten to this third-party framing.
+
 ## 5. What this means for Phoenix sequencing
 
 - **No blocker today.** PowerSchool stays the TSDS submitter; Phoenix's
