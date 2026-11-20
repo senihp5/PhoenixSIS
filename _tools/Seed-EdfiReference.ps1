@@ -5,6 +5,12 @@
     ODS so synced students (Sprint 7) have valid targets:
       - LocalEducationAgency 220822 "New Heights" (charter, Fort Worth / Tarrant)
       - School 220822001 "New Heights Adult High School" (Adult School / Adult Education)
+      - PHX-7.0: school-year scaffolding for -SchoolYear (default 2027 = 2026-27):
+        one School calendar + Fall and Spring semester sessions (sample dates)
+
+    PHX-7.0 prerequisite: the sandbox API client must cover LEA 220822
+    (_tools\Add-EdfiClientEdOrg.ps1 -Apply). The Ed-Fi Sandbox claim set is
+    relationship-based; without it calendar/session writes return 403.
 
     Uses the sandbox key/secret from C:\temp\edfi-sandbox.ps1. Idempotent: Ed-Fi
     POST is upsert-by-natural-key, so re-running updates in place (no duplicates).
@@ -25,7 +31,8 @@
 param(
     [string]$CredentialScript = 'C:\temp\edfi-sandbox.ps1',
     [int]$LeaId = 220822,
-    [int]$SchoolId = 220822001
+    [int]$SchoolId = 220822001,
+    [int]$SchoolYear = 2027
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,18 +114,76 @@ Write-Host ("  LEA {0} 'New Heights'  -> HTTP {1}" -f $LeaId, $r1.StatusCode) -F
 $r2 = Invoke-Edfi 'Post' "$dataBase/schools" $school $h
 Write-Host ("  School {0} 'New Heights Adult High School' -> HTTP {1}" -f $SchoolId, $r2.StatusCode) -ForegroundColor Green
 
+# PHX-7.0 - school-year scaffolding (sample dates, not the real NH calendar)
+$syLabel = '{0}-{1}' -f ($SchoolYear - 1), $SchoolYear
+$schoolRef = @{ schoolId = $SchoolId }
+$yearRef = @{ schoolYear = $SchoolYear }
+$calendarCode = '{0}-{1}' -f $SchoolId, $SchoolYear
+
+$calendar = @{
+    calendarCode            = $calendarCode
+    schoolReference         = $schoolRef
+    schoolYearTypeReference = $yearRef
+    calendarTypeDescriptor  = "$ns/CalendarTypeDescriptor#School"
+    gradeLevels             = @(
+        @{ gradeLevelDescriptor = "$ns/GradeLevelDescriptor#Adult Education" }
+    )
+}
+
+$sessions = @(
+    @{
+        sessionName             = "$syLabel Fall Semester"
+        schoolReference         = $schoolRef
+        schoolYearTypeReference = $yearRef
+        termDescriptor          = "$ns/TermDescriptor#Fall Semester"
+        beginDate               = '{0}-08-17' -f ($SchoolYear - 1)
+        endDate                 = '{0}-12-18' -f ($SchoolYear - 1)
+        totalInstructionalDays  = 80
+    },
+    @{
+        sessionName             = "$syLabel Spring Semester"
+        schoolReference         = $schoolRef
+        schoolYearTypeReference = $yearRef
+        termDescriptor          = "$ns/TermDescriptor#Spring Semester"
+        beginDate               = '{0}-01-05' -f $SchoolYear
+        endDate                 = '{0}-05-28' -f $SchoolYear
+        totalInstructionalDays  = 95
+    }
+)
+
+try {
+    $r3 = Invoke-Edfi 'Post' "$dataBase/calendars" $calendar $h
+    Write-Host ("  Calendar {0} ({1}) -> HTTP {2}" -f $calendarCode, $syLabel, $r3.StatusCode) -ForegroundColor Green
+    foreach ($s in $sessions) {
+        $r4 = Invoke-Edfi 'Post' "$dataBase/sessions" $s $h
+        Write-Host ("  Session '{0}' {1}..{2} -> HTTP {3}" -f $s.sessionName, $s.beginDate, $s.endDate, $r4.StatusCode) -ForegroundColor Green
+    }
+}
+catch {
+    if ($_.Exception.Response.StatusCode.value__ -eq 403) {
+        throw "403 writing calendar/session for school $SchoolId. The sandbox API client does not cover LEA $LeaId - run _tools\Add-EdfiClientEdOrg.ps1 -Apply first."
+    }
+    throw
+}
+
 # Verify by natural key
 $leaCheck    = Invoke-RestMethod "$dataBase/localEducationAgencies?localEducationAgencyId=$LeaId" -Headers $h -TimeoutSec 60
 $schoolCheck = Invoke-RestMethod "$dataBase/schools?schoolId=$SchoolId" -Headers $h -TimeoutSec 60
+$calendarCheck = Invoke-RestMethod "$dataBase/calendars?schoolId=$SchoolId&schoolYear=$SchoolYear" -Headers $h -TimeoutSec 60
+$sessionCheck = Invoke-RestMethod "$dataBase/sessions?schoolId=$SchoolId&schoolYear=$SchoolYear" -Headers $h -TimeoutSec 60
 
 Write-Host ''
-if (@($leaCheck).Count -ge 1 -and @($schoolCheck).Count -ge 1) {
+if ($leaCheck.Count -ge 1 -and $schoolCheck.Count -ge 1 -and $calendarCheck.Count -eq 1 -and $sessionCheck.Count -eq $sessions.Count) {
     Write-Host 'Verified:' -ForegroundColor Green
     Write-Host ("  LEA    {0}: {1} ({2})" -f $LeaId, @($leaCheck)[0].nameOfInstitution, @($leaCheck)[0].localEducationAgencyCategoryDescriptor.Split('#')[-1])
     Write-Host ("  School {0}: {1} ({2}, {3})" -f $SchoolId, @($schoolCheck)[0].nameOfInstitution, @($schoolCheck)[0].schoolCategories[0].schoolCategoryDescriptor.Split('#')[-1], @($schoolCheck)[0].gradeLevels[0].gradeLevelDescriptor.Split('#')[-1])
+    Write-Host ("  Calendar {0}: {1}, grade levels: {2}" -f $calendarCheck[0].calendarCode, $calendarCheck[0].calendarTypeDescriptor.Split('#')[-1], (($calendarCheck[0].gradeLevels | ForEach-Object { $_.gradeLevelDescriptor.Split('#')[-1] }) -join ', '))
+    foreach ($s in ($sessionCheck | Sort-Object beginDate)) {
+        Write-Host ("  Session {0}: {1}..{2}, {3} instructional days" -f $s.sessionName, $s.beginDate, $s.endDate, $s.totalInstructionalDays)
+    }
     Write-Host ''
     Write-Host 'Reference seed complete. Re-running this script is a no-op (upsert by natural key).' -ForegroundColor Cyan
 }
 else {
-    throw 'Verification failed: LEA or School not found after seeding.'
+    throw ("Verification failed: LEA={0} School={1} Calendar={2} Sessions={3} (expected >=1, >=1, 1, {4})." -f $leaCheck.Count, $schoolCheck.Count, $calendarCheck.Count, $sessionCheck.Count, $sessions.Count)
 }

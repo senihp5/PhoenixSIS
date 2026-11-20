@@ -31,7 +31,7 @@ param(
     [string]$Template = 'Populated',
     [int]$SandboxType = 2,
     [string]$ClaimSet = 'Ed-Fi Sandbox',
-    [long[]]$EdOrgIds = @(255901),
+    [long[]]$EdOrgIds = @(255901, 220822),
     [string]$VendorName = 'Phoenix SIS',
     [string]$UserEmail = 'Patrick.Hines@PhoenixSIS.onmicrosoft.com',
     [string]$UserFullName = 'Patrick Hines',

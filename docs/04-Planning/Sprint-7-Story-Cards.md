@@ -30,6 +30,7 @@ As the developer, I want the campus to have a school year, calendar, and session
 - [ ] Probe live: `schoolYearTypes` (does 2027 exist?), and the descriptor values available for `calendarTypeDescriptor`, `termDescriptor`, `enrollmentTypeDescriptor`, `entryGradeLevelDescriptor` (Adult Education), `studentIdentificationSystemDescriptor` (Local). Record the exact URIs in `docs\edfi\texas-sample.md`.
 - [ ] Extend `_tools\Seed-EdfiReference.ps1` (idempotent POST upserts): `calendars` for school 220822001 / school year 2027 (required: calendarCode, calendarTypeDescriptor, schoolReference, schoolYearTypeReference); `sessions` for the same (required: sessionName, termDescriptor, beginDate, endDate, totalInstructionalDays, schoolReference, schoolYearTypeReference).
 - [ ] Re-run is a no-op; GET verifies both.
+- [ ] **Found in the probe (2026-11-20):** the sandbox API client covers only Ed-Fi sample LEA 255901, so writes for 220822001 return 403. Grant LEA 220822 with `_tools\Add-EdfiClientEdOrg.ps1 -Apply`; `New-EdfiSandbox.ps1` default now includes 220822.
 
 ### Definition of Done
 - [ ] Calendar + session exist for 220822001 / 2027; descriptor URIs documented; seeder idempotent.
