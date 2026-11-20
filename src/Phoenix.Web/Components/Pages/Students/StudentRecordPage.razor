@@ -205,6 +205,14 @@ else if (_detail is not null)
     protected override async Task OnParametersSetAsync()
     {
         _campus ??= Campuses.GetCampuses().FirstOrDefault()?.Number;
+
+        // Runs for the prerender and again for the circuit. Loading only when
+        // interactive records one View event per visit instead of two.
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
         await LoadAsync();
     }
 

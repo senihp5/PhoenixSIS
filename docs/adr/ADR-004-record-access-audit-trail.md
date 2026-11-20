@@ -61,6 +61,25 @@ A login with `db_owner` can still disable the trigger; separating the applicatio
 the schema owner is a later hardening item. Ed-Fi's own logs are out of scope; Phoenix audits
 what Phoenix users do.
 
+## Implementation notes (Sprint 8)
+
+- **Viewer (PHX-8.5):** `admin/audit` (`Pages\Admin\AuditTrail.razor`), `RequireAdmin`, no
+  feature flag. `IAuditReader` / `AuditReader`: newest first, 50 per page; filters = student
+  (GUID or any mapped identifier value such as PHX-000003), actor (part of the sign-in name or
+  the whole actor id), from / to dates (inclusive Central days; rows are stored in UTC). Each
+  search records one `AuditView` event that names the filters used but not their values, with
+  no student id, before any row is returned.
+- **The viewer shows GUIDs, not names.** A student link opens the student record, which
+  records its own View event.
+- **One event per visit.** InteractiveServer pages run their load twice (prerender, then the
+  circuit). The student list, student record and audit pages load only when
+  `RendererInfo.IsInteractive`, after the live rows of 2026-11-20 showed two View events per
+  student for one visit to the list.
+- **Ed-Fi sync:** the pre-send `SyncApply` event says "send started"; a second event per sent
+  student records the result. If the result write fails after the send, the page warns and
+  the error is logged (the only place a failed audit write does not stop the operation,
+  because the data has already left).
+
 ## References
 
 - ADR-002 (identity is core), ADR-003 (data gates), Sprint 8 cards

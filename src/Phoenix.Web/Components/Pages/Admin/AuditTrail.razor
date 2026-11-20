@@ -1,0 +1,154 @@
+@page "/admin/audit"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Auditing
+@inject IAuditReader Reader
+
+<PageTitle>Audit Trail</PageTitle>
+
+<h1>Audit Trail</h1>
+
+<p class="text-muted">
+    Who viewed or changed which student, and when (ADR-004). Newest first. Rows cannot be
+    edited or deleted. Every search on this page is itself recorded. Times are Central.
+</p>
+
+<div class="row g-2 mb-3 align-items-end" style="max-width: 64rem;">
+    <div class="col-md-4">
+        <label class="form-label" for="auditStudent">Student (ID such as PHX-000003, or GUID)</label>
+        <input id="auditStudent" class="form-control" type="text" @bind="_student" disabled="@_busy" />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="auditActor">Actor (sign-in name)</label>
+        <input id="auditActor" class="form-control" type="text" @bind="_actor" disabled="@_busy" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="auditFrom">From</label>
+        <input id="auditFrom" class="form-control" type="date" @bind="_from" disabled="@_busy" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label" for="auditTo">To</label>
+        <input id="auditTo" class="form-control" type="date" @bind="_to" disabled="@_busy" />
+    </div>
+    <div class="col-md-1">
+        <button class="btn btn-outline-primary w-100" @onclick="() => LoadAsync(1)" disabled="@_busy">Search</button>
+    </div>
+</div>
+
+@if (_busy && _page is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (_error is not null)
+{
+    <div class="alert alert-danger">
+        <strong>The audit trail could not be shown.</strong>
+        <pre class="mb-0">@_error</pre>
+    </div>
+}
+else if (_page is not null)
+{
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadAsync(_page.Page - 1)" disabled="@(_busy || _page.Page <= 1)">Newer</button>
+        <span>Page @_page.Page of @_page.PageCount - @_page.Total event(s)</span>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadAsync(_page.Page + 1)" disabled="@(_busy || _page.Page >= _page.PageCount)">Older</button>
+    </div>
+
+    @if (_page.Items.Count == 0)
+    {
+        <div class="alert alert-secondary">No audit events match.</div>
+    }
+    else
+    {
+        <table class="table table-sm table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>When (Central)</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Record</th>
+                    <th>Student</th>
+                    <th>Summary</th>
+                    <th>Operation</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _page.Items)
+                {
+                    <tr>
+                        <td class="text-nowrap">@AuditTimeZone.ToCentral(e.OccurredUtc).ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td title="@e.ActorId">@e.ActorName</td>
+                        <td><span class="badge @BadgeClass(e.Action)">@e.Action</span></td>
+                        <td>@e.EntityType</td>
+                        <td>
+                            @if (e.StudentId is { } studentId)
+                            {
+                                <a href="@($"admin/students/{studentId}")" title="@studentId"><code>@Short(studentId.ToString())</code></a>
+                            }
+                        </td>
+                        <td>@e.Summary</td>
+                        <td title="@e.CorrelationId"><code>@Short(e.CorrelationId)</code></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="form-text">
+            Opening a student from this page records a view of that student. Rows with the same
+            Operation value were written by one action.
+        </p>
+    }
+}
+
+@code {
+    private string? _student;
+    private string? _actor;
+    private DateOnly? _from;
+    private DateOnly? _to;
+
+    private AuditPage? _page;
+    private string? _error;
+    private bool _busy = true;
+
+    // OnInitializedAsync runs twice for an InteractiveServer page (prerender,
+    // then the circuit). Loading only when interactive records one AuditView
+    // event per visit instead of two.
+    protected override async Task OnInitializedAsync()
+    {
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
+        await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _page = await Reader.SearchAsync(new AuditQuery(_student, _actor, _from, _to), page);
+        }
+        catch (Exception ex)
+        {
+            _page = null;
+            _error = ex.Message;
+        }
+
+        _busy = false;
+    }
+
+    private static string Short(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= 8 ? value : value[..8];
+
+    private static string BadgeClass(AuditAction action) => action switch
+    {
+        AuditAction.View or AuditAction.AuditView or AuditAction.SyncPreview => "bg-secondary",
+        AuditAction.Create or AuditAction.Enroll => "bg-success",
+        AuditAction.Update or AuditAction.Exit => "bg-warning text-dark",
+        AuditAction.SyncApply => "bg-primary",
+        _ => "bg-light text-dark"
+    };
+}

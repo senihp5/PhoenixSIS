@@ -72,6 +72,7 @@ builder.Services.AddDbContext<PhoenixDbContext>(options =>
 // behind a feature flag. The actor comes from the Blazor auth state.
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IAuditLog, AuditLog>();
+builder.Services.AddScoped<IAuditReader, AuditReader>();
 
 // Canonical student identity resolution (PHX-5.3) — core, always registered.
 builder.Services.AddScoped<IStudentIdentityService, StudentIdentityService>();

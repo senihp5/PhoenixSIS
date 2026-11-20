@@ -167,6 +167,16 @@ else
     protected override async Task OnInitializedAsync()
     {
         _bulkCampus = Campuses.GetCampuses().FirstOrDefault()?.Number;
+
+        // This runs twice for an InteractiveServer page (prerender, then the
+        // circuit). Loading only when interactive records one View event per
+        // student per visit instead of two (found in the live audit rows,
+        // 2026-11-20).
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
         await LoadAsync(1);
     }
 
