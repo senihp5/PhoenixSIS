@@ -29,7 +29,11 @@ namespace Phoenix.Infrastructure.EdFi;
 ///
 /// Audit (ADR-004): one SyncPreview or SyncApply event per student listed,
 /// saved BEFORE anything is shown or sent. If the audit write fails, the
-/// sync throws and nothing reaches Ed-Fi (fail closed).
+/// sync throws and nothing reaches Ed-Fi (fail closed). The pre-send apply
+/// event says only that the send started; after the writes a second
+/// SyncApply event per sent student records what happened (created,
+/// updated, or the resource it failed at). If that second write fails the
+/// data has already gone, so the result is still returned, with a warning.
 /// </summary>
 public sealed class StudentSyncService : IStudentSyncService
 {
@@ -174,7 +178,11 @@ public sealed class StudentSyncService : IStudentSyncService
             rows.Add(await SyncOneAsync(plan, target, cancellationToken));
         }
 
-        var result = new StudentSyncResult(target, apply, rows);
+        var warning = apply
+            ? await RecordOutcomesAsync(rows, campusNumber, yearLabel, cancellationToken)
+            : null;
+
+        var result = new StudentSyncResult(target, apply, rows, warning);
         _logger.LogInformation(
             "Ed-Fi student sync ({Mode}) for school {SchoolId}, school year {SchoolYear}: {Total} students, {Create} create, {Update} update, {Skipped} skipped, {Failed} failed.",
             apply ? "apply" : "dry run", target.SchoolId, target.SchoolYear,
@@ -204,7 +212,7 @@ public sealed class StudentSyncService : IStudentSyncService
             plan.SkipReason is not null
                 ? $"Ed-Fi sync {(apply ? "apply" : "preview")}: {scope}; not sent (skipped)."
                 : apply
-                    ? $"Ed-Fi sync apply: {scope}; sent to Ed-Fi."
+                    ? $"Ed-Fi sync apply: {scope}; send started."
                     : $"Ed-Fi sync preview: {scope}; listed."));
 
         try
@@ -218,6 +226,61 @@ public sealed class StudentSyncService : IStudentSyncService
             // is shown or sent (ADR-004 fail closed).
             _db.ChangeTracker.Clear();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Records what the apply did for each student it tried to send. Summaries
+    /// carry the outcome and, on failure, the Ed-Fi resource name only - never
+    /// the problem text, which can quote record content. Returns a warning for
+    /// the caller when the rows could not be saved.
+    /// </summary>
+    private async Task<string?> RecordOutcomesAsync(
+        List<StudentSyncRow> rows,
+        string campusNumber,
+        string yearLabel,
+        CancellationToken cancellationToken)
+    {
+        var scope = $"campus {campusNumber}, school year {yearLabel}";
+
+        var entries = rows
+            .Where(r => r.Outcome is StudentSyncOutcome.Created or StudentSyncOutcome.Updated or StudentSyncOutcome.Failed)
+            .Select(r => new AuditEntry(
+                AuditAction.SyncApply,
+                AuditEntityType,
+                r.StudentId,
+                r.StudentId,
+                r.Outcome switch
+                {
+                    StudentSyncOutcome.Created => $"Ed-Fi sync apply result: {scope}; created in Ed-Fi.",
+                    StudentSyncOutcome.Updated => $"Ed-Fi sync apply result: {scope}; updated in Ed-Fi.",
+                    _ => r.FailedResource is null
+                        ? $"Ed-Fi sync apply result: {scope}; failed without an Ed-Fi response."
+                        : $"Ed-Fi sync apply result: {scope}; failed at {r.FailedResource}."
+                }))
+            .ToList();
+
+        if (entries.Count == 0)
+            return null;
+
+        try
+        {
+            await _audit.RecordAsync(entries, cancellationToken);
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _db.ChangeTracker.Clear();
+            _logger.LogError(
+                ex,
+                "Ed-Fi sync results for {Count} student(s) could not be written to the audit trail.",
+                entries.Count);
+            return "The sync ran, but its results could not be written to the audit trail. "
+                + "The audit trail shows each send as started, with no result.";
         }
     }
 

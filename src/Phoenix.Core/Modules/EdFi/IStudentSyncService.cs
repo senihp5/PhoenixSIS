@@ -50,10 +50,16 @@ public sealed record StudentSyncRow(
     EdFiProblem? Problem = null,
     string? Reason = null);
 
+/// <summary>
+/// <see cref="Warning"/> is set when an apply ran but its per-student results
+/// could not be written to the audit trail (the send itself is always
+/// audited first).
+/// </summary>
 public sealed record StudentSyncResult(
     EdFiSyncTarget Target,
     bool Applied,
-    IReadOnlyList<StudentSyncRow> Rows)
+    IReadOnlyList<StudentSyncRow> Rows,
+    string? Warning = null)
 {
     public int Total => Rows.Count;
     public int ToCreate => Rows.Count(r => r.Outcome is StudentSyncOutcome.WouldCreate or StudentSyncOutcome.Created);
@@ -76,7 +82,8 @@ public sealed record StudentSyncResult(
 /// data; apply is idempotent; one student's failure never stops the batch.
 /// Both are audited per student listed (SyncPreview / SyncApply, ADR-004)
 /// before anything is shown or sent; if that audit write fails the call
-/// throws.
+/// throws. Apply then records a second SyncApply event per sent student
+/// with the result.
 /// </summary>
 public interface IStudentSyncService
 {

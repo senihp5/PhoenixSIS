@@ -102,8 +102,23 @@ matching enrollment is Skipped and gets no PHX number.
 
 **Audited (ADR-004).** Preview records one `SyncPreview` event and Run one `SyncApply`
 event per student listed (skipped students included), saved before anything is shown or
-sent. If the audit write fails the sync throws and nothing reaches Ed-Fi. Summaries carry
-campus and school year only.
+sent. If the audit write fails the sync throws and nothing reaches Ed-Fi. The pre-send Run
+event says "send started"; after the writes a second `SyncApply` event per sent student
+records the result (created, updated, or "failed at <resource>"). If that second write
+fails, the data has already gone: the page still shows the rows, with a warning, and the
+error is logged. Summaries carry campus, school year and outcome only - never the Ed-Fi
+problem text.
+
+**Open mapping question (2026-11-20, for Patrick + Hailee):** `ExitReason.NonAttendance`
+is sent as `#Withdrawn`, the same value as `Withdrew`, so Ed-Fi cannot tell the two apart.
+Core Ed-Fi has no exact match ("No show" = never attended). Candidates: keep Withdrawn,
+`#Dropout`, `#Involuntarily Removed`. One config key:
+`EdFiApi:ExitWithdrawTypeDescriptors:NonAttendance`.
+
+**Exited students stay visible to the client (read probe 2026-11-20):** two students in
+the sandbox whose only enrollment has an `exitWithdrawDate` (605260, 605522 at 255901001)
+are still returned by `GET students` and `GET studentEducationOrganizationAssociations`.
+Write access for an exited student is proven in the PHX-8.5 live run.
 
 **Order is forced by Ed-Fi authorization.** The enrollment must come straight after the
 student: relationship-based authorization only lets the client write the LEA association and

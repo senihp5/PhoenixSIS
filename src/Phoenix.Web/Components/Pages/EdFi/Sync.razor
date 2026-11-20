@@ -90,6 +90,11 @@ else
             <strong>@(_result.Applied ? "Applied" : "Dry run")</strong> - @SummaryText
         </div>
 
+        @if (_result.Warning is not null)
+        {
+            <div class="alert alert-warning">@_result.Warning</div>
+        }
+
         <table class="table table-striped align-middle">
             <thead>
                 <tr>

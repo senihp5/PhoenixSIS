@@ -331,8 +331,10 @@ public class StudentSyncServiceTests
         await svc.SyncAllAsync(Target, apply: true);
 
         var applies = await db.AuditEvents.Where(e => e.Action == AuditAction.SyncApply).ToListAsync();
-        Assert.Equal(2, applies.Count);
-        Assert.Contains("sent to Ed-Fi", applies.Single(e => e.StudentId == ids[0]).Summary);
+        var sent = applies.Where(e => e.StudentId == ids[0]).Select(e => e.Summary).ToList();
+        Assert.Equal(2, sent.Count);
+        Assert.Contains(sent, s => s!.EndsWith("send started."));
+        Assert.Contains(sent, s => s!.EndsWith("created in Ed-Fi."));
         Assert.Contains("not sent", applies.Single(e => e.StudentId == ids[1]).Summary);
 
         Assert.All(previews.Concat(applies), e =>
@@ -344,6 +346,59 @@ public class StudentSyncServiceTests
             Assert.DoesNotContain("Ana", e.Summary);
             Assert.DoesNotContain("Ben", e.Summary);
         });
+    }
+
+    [Fact]
+    public async Task Failed_send_is_audited_with_the_resource_and_not_the_problem_text()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Ana", "Alvarez"));
+        var problem = new EdFiProblem(
+            "urn:ed-fi:api:bad-request:data-validation-failed",
+            "Data Validation Failed",
+            400,
+            "Student Ana Alvarez failed validation.",
+            null,
+            [],
+            new Dictionary<string, IReadOnlyList<string>>());
+        var client = new FakeEdFiClient
+        {
+            FailWhen = (resource, _) => resource == "studentSchoolAssociations" ? problem : null
+        };
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Equal(1, result.Failed);
+        Assert.Null(result.Warning);
+        var summaries = await db.AuditEvents
+            .Where(e => e.Action == AuditAction.SyncApply && e.StudentId == ids[0])
+            .Select(e => e.Summary)
+            .ToListAsync();
+        Assert.Equal(2, summaries.Count);
+        Assert.Contains(summaries, s => s!.EndsWith("send started."));
+        Assert.Contains(summaries, s => s!.EndsWith("failed at studentSchoolAssociations."));
+        Assert.All(summaries, s => Assert.DoesNotContain("Alvarez", s));
+    }
+
+    [Fact]
+    public async Task Result_audit_failure_after_the_send_returns_the_rows_with_a_warning()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Ana", "Alvarez"));
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client, user: new FailsOnCallCurrentUser(2));
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Equal(StudentSyncOutcome.Created, Assert.Single(result.Rows).Outcome);
+        Assert.NotNull(result.Warning);
+        Assert.Equal(4, client.Calls.Count);
+        var summary = await db.AuditEvents
+            .Where(e => e.Action == AuditAction.SyncApply && e.StudentId == ids[0])
+            .Select(e => e.Summary)
+            .SingleAsync();
+        Assert.EndsWith("send started.", summary);
     }
 
     [Fact]
@@ -459,6 +514,17 @@ public class StudentSyncServiceTests
         {
             if (!enabled) throw new FeatureNotEnabledException(featureName);
         }
+    }
+
+    /// <summary>Works until the given call, then fails - the audit store going away mid-run.</summary>
+    private sealed class FailsOnCallCurrentUser(int failOnCall) : ICurrentUser
+    {
+        private int _calls;
+
+        public ValueTask<AuditActor> GetActorAsync(CancellationToken cancellationToken = default) =>
+            ++_calls >= failOnCall
+                ? throw new InvalidOperationException("Audit store unavailable.")
+                : ValueTask.FromResult(TestSupport.TestActor);
     }
 
     private sealed record Call(string Resource, string UniqueId, object Payload);
