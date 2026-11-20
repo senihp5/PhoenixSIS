@@ -1,14 +1,25 @@
 using Microsoft.EntityFrameworkCore;
+using Phoenix.Core.Auditing;
 using Phoenix.Core.Students;
 using Phoenix.Infrastructure.Data;
 
 namespace Phoenix.Infrastructure.Students;
 
+/// <summary>
+/// ADR-002 identity resolution. Every change is audited in the same save as
+/// the change itself (ADR-004 fail closed). Summaries name the source system
+/// only - never the student or the identifier value.
+/// </summary>
 public sealed class StudentIdentityService : IStudentIdentityService
 {
     private readonly PhoenixDbContext _db;
+    private readonly IAuditLog _audit;
 
-    public StudentIdentityService(PhoenixDbContext db) => _db = db;
+    public StudentIdentityService(PhoenixDbContext db, IAuditLog audit)
+    {
+        _db = db;
+        _audit = audit;
+    }
 
     public async Task<StudentRecord?> GetByIdentifierAsync(
         string sourceSystem, string externalId, CancellationToken cancellationToken = default)
@@ -54,6 +65,14 @@ public sealed class StudentIdentityService : IStudentIdentityService
         });
 
         _db.Students.Add(student);
+        await _audit.StageAsync(
+            new AuditEntry(
+                AuditAction.Create,
+                "Student",
+                student.Id,
+                student.Id,
+                $"Student created from source {sourceSystem}."),
+            cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return Map(student);
     }
@@ -78,13 +97,22 @@ public sealed class StudentIdentityService : IStudentIdentityService
         if (!studentExists)
             throw new InvalidOperationException($"Student {studentId} does not exist.");
 
-        _db.StudentIdentifiers.Add(new StudentIdentifier
+        var identifier = new StudentIdentifier
         {
             Id = Guid.NewGuid(),
             StudentId = studentId,
             SourceSystem = sourceSystem,
             Value = externalId
-        });
+        };
+        _db.StudentIdentifiers.Add(identifier);
+        await _audit.StageAsync(
+            new AuditEntry(
+                AuditAction.Update,
+                "StudentIdentifier",
+                identifier.Id,
+                studentId,
+                $"Identifier added for source {sourceSystem}."),
+            cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
     }
 

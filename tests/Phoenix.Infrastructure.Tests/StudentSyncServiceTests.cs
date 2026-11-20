@@ -74,7 +74,7 @@ public class StudentSyncServiceTests
         Assert.Equal("PHX-000001", code.IdentificationCode);
         Assert.Equal(220822, code.EducationOrganizationId);
 
-        var mapped = await new StudentIdentityService(db).GetByIdentifierAsync("Ed-Fi", "PHX-000001");
+        var mapped = await TestSupport.Identity(db).GetByIdentifierAsync("Ed-Fi", "PHX-000001");
         Assert.Equal(studentId, mapped!.Id);
     }
 
@@ -147,7 +147,7 @@ public class StudentSyncServiceTests
     {
         await using var db = NewDb();
         var ids = await SeedAsync(db, ("Fatima", "Al-Rashid"));
-        await new StudentIdentityService(db).AddIdentifierAsync(ids[0], "Ed-Fi", "PHX-000001");
+        await TestSupport.Identity(db).AddIdentifierAsync(ids[0], "Ed-Fi", "PHX-000001");
         var client = new FakeEdFiClient();
         client.AddExistingUnenrolledStudent("PHX-000001"); // left behind by an earlier failed run
         var svc = NewService(db, client);
@@ -205,7 +205,7 @@ public class StudentSyncServiceTests
     {
         await using var db = NewDb();
         var ids = await SeedAsync(db, ("Ana", "Alvarez"), ("Ben", "Brooks"));
-        await new StudentIdentityService(db).AddIdentifierAsync(ids[0], "Ed-Fi", "PHX-000007");
+        await TestSupport.Identity(db).AddIdentifierAsync(ids[0], "Ed-Fi", "PHX-000007");
         var svc = NewService(db, new FakeEdFiClient());
 
         var result = await svc.SyncAllAsync(Target, apply: false);
@@ -242,7 +242,7 @@ public class StudentSyncServiceTests
     private static StudentSyncService NewService(PhoenixDbContext db, FakeEdFiClient client, bool enabled = true) =>
         new(
             db,
-            new StudentIdentityService(db),
+            TestSupport.Identity(db),
             client,
             Options.Create(new EdFiApiOptions()),
             new StubFeatureFlags(enabled),
@@ -250,7 +250,7 @@ public class StudentSyncServiceTests
 
     private static async Task<List<Guid>> SeedAsync(PhoenixDbContext db, params (string First, string Last)[] names)
     {
-        var identity = new StudentIdentityService(db);
+        var identity = TestSupport.Identity(db);
         var ids = new List<Guid>();
         var n = 0;
         foreach (var (first, last) in names)

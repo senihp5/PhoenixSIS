@@ -29,7 +29,7 @@ public class TexasSampleSourceConnectorTests
     public async Task Imports_into_phoenix_via_pipeline_idempotently()
     {
         await using var db = NewDb();
-        var svc = new MigrationService(new StudentIdentityService(db));
+        var svc = new MigrationService(TestSupport.Identity(db));
         var connector = new TexasSampleSourceConnector();
 
         var applied = await svc.RunAsync(connector, apply: true);

@@ -13,7 +13,7 @@ public class MigrationServiceTests
             .Options);
 
     private static MigrationService NewService(PhoenixDbContext db) =>
-        new(new StudentIdentityService(db));
+        new(TestSupport.Identity(db));
 
     [Fact]
     public async Task DryRun_classifies_without_writing()

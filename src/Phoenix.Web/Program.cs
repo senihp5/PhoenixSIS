@@ -2,13 +2,16 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
+using Phoenix.Core.Auditing;
 using Phoenix.Core.Features;
 using Phoenix.Core.Students;
+using Phoenix.Infrastructure.Auditing;
 using Phoenix.Infrastructure.Data;
 using Phoenix.Infrastructure.Features;
 using Phoenix.Infrastructure.Modules;
 using Phoenix.Infrastructure.Students;
 using Phoenix.Web.Components;
+using Phoenix.Web.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -64,6 +67,11 @@ builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 // deployed); the canonical student store is core, so it is always registered.
 builder.Services.AddDbContext<PhoenixDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("PhoenixDb")));
+
+// Record-access audit trail (ADR-004, PHX-8.1) — core, always on, never
+// behind a feature flag. The actor comes from the Blazor auth state.
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<IAuditLog, AuditLog>();
 
 // Canonical student identity resolution (PHX-5.3) — core, always registered.
 builder.Services.AddScoped<IStudentIdentityService, StudentIdentityService>();

@@ -19,7 +19,7 @@ public class StudentIdentityServiceTests
     public async Task ResolveOrCreate_is_idempotent()
     {
         await using var db = NewDb();
-        var svc = new StudentIdentityService(db);
+        var svc = TestSupport.Identity(db);
 
         var a = await svc.ResolveOrCreateAsync("Ed-Fi", "100001", Sample);
         var b = await svc.ResolveOrCreateAsync("Ed-Fi", "100001", Sample);
@@ -33,7 +33,7 @@ public class StudentIdentityServiceTests
     public async Task GetByIdentifier_returns_null_then_the_student()
     {
         await using var db = NewDb();
-        var svc = new StudentIdentityService(db);
+        var svc = TestSupport.Identity(db);
 
         Assert.Null(await svc.GetByIdentifierAsync("Ed-Fi", "X"));
 
@@ -49,7 +49,7 @@ public class StudentIdentityServiceTests
     public async Task AddIdentifier_links_second_source_and_is_idempotent()
     {
         await using var db = NewDb();
-        var svc = new StudentIdentityService(db);
+        var svc = TestSupport.Identity(db);
 
         var s = await svc.ResolveOrCreateAsync("Ed-Fi", "100001", Sample);
         await svc.AddIdentifierAsync(s.Id, "PowerSchool", "PS-42");
@@ -64,7 +64,7 @@ public class StudentIdentityServiceTests
     public async Task AddIdentifier_conflict_throws()
     {
         await using var db = NewDb();
-        var svc = new StudentIdentityService(db);
+        var svc = TestSupport.Identity(db);
 
         var s1 = await svc.ResolveOrCreateAsync("Ed-Fi", "1", Sample);
         _ = s1;

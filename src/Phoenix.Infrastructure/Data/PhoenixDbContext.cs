@@ -16,6 +16,7 @@ public class PhoenixDbContext : DbContext
 
     public DbSet<Student> Students => Set<Student>();
     public DbSet<StudentIdentifier> StudentIdentifiers => Set<StudentIdentifier>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +40,25 @@ public class PhoenixDbContext : DbContext
                 .WithMany(s => s.Identifiers)
                 .HasForeignKey(i => i.StudentId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ADR-004 append-only audit trail. No FK to Student on purpose: the
+        // trail must outlive any record it describes. HasTrigger tells EF the
+        // table has a trigger (TR_AuditEvent_AppendOnly, created in the
+        // AddAuditEvent migration) so it never uses OUTPUT without INTO.
+        modelBuilder.Entity<AuditEvent>(e =>
+        {
+            e.ToTable("AuditEvent", t => t.HasTrigger(AuditEvent.AppendOnlyTriggerName));
+            e.HasKey(a => a.Id);
+            e.Property(a => a.ActorId).HasMaxLength(100).IsRequired();
+            e.Property(a => a.ActorName).HasMaxLength(256).IsRequired();
+            e.Property(a => a.Action).HasConversion<string>().HasMaxLength(30).IsRequired();
+            e.Property(a => a.EntityType).HasMaxLength(50).IsRequired();
+            e.Property(a => a.Summary).HasMaxLength(400);
+            e.Property(a => a.CorrelationId).HasMaxLength(100);
+            e.HasIndex(a => new { a.StudentId, a.OccurredUtc });
+            e.HasIndex(a => new { a.ActorId, a.OccurredUtc });
+            e.HasIndex(a => a.OccurredUtc);
         });
     }
 }
