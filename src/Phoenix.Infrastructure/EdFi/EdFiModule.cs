@@ -22,6 +22,7 @@ public class EdFiModule : IModule
             configuration.GetSection(EdFiApiOptions.SectionName));
         services.AddHttpClient(EdFiApiClient.HttpClientName);
         services.AddSingleton<IEdFiApiClient, EdFiApiClient>();
+        services.AddScoped<IStudentSyncService, StudentSyncService>();
     }
 
     public Task InitializeAsync(IServiceProvider services, ILogger logger)

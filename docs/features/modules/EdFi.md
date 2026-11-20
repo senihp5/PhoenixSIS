@@ -81,6 +81,35 @@ The sandbox key/secret are produced by `_tools\New-EdfiSandbox.ps1` into
 - Logs carry resource, status, problem type and correlation id only — never the body.
 - Write order matters: student first, then the associations (a missing student is a 409).
 
+### Student sync (PHX-7.2) — `IStudentSyncService`
+
+`SyncAllAsync(EdFiSyncTarget target, bool apply)` pushes every canonical Phoenix student.
+`GetDefaultTarget()` builds the target from config. Per student, in order: Student →
+StudentEducationOrganizationAssociation (LEA) → StudentSchoolAssociation (campus, entry
+date, school year, calendar, primarySchool, enrollment type, FTE) → StudentIdentificationCode
+(Local = the PHX number).
+
+| Outcome | Meaning |
+|---|---|
+| WouldCreate / WouldUpdate | Dry run — nothing written to Ed-Fi or Phoenix |
+| Created / Updated | Applied; the student POST returned 201 / 200 and all four writes succeeded |
+| Skipped | Not sent — no birth date in Phoenix (Ed-Fi requires one) |
+| Failed | One write failed: `FailedResource` + Ed-Fi `Problem`, or `Reason` for a non-API error. Never stops the batch |
+
+- **Ed-Fi ID:** `studentUniqueId` = `PHX-NNNNNN`, stored as a Phoenix identifier (source
+  system `Ed-Fi`, ADR-002). New numbers continue after the highest one already mapped.
+- **Two deliberate departures from the card:** (1) the number is recorded *before* the
+  writes, so a student whose writes fail keeps the same number on the next run and Ed-Fi
+  never collects orphan records; (2) mapped students are re-upserted on every apply
+  (`Updated`) rather than skipped, so failures heal and Phoenix name/DOB corrections reach
+  Ed-Fi. The card's signature `SyncAllAsync(schoolId, apply)` became a target record so the
+  PHX-7.3 page can choose campus, year and calendar.
+- **Config (`EdFiApi`, non-secret, defaults in `EdFiApiOptions` match the seeded sample ODS):**
+  `DefaultLeaId` 220822, `DefaultSchoolId` 220822001, `SchoolYear` 2027, `CalendarCode`
+  220822001-2027, `DefaultEntryDate` 2026-08-17, `DefaultEntryGradeLevelDescriptor` Adult
+  Education, `DefaultEnrollmentTypeDescriptor` Current, `DefaultFullTimeEquivalency` 1.0,
+  `LocalIdentificationSystemDescriptor` Local.
+
 Registered as a **singleton** so the token cache persists; pulls a fresh
 `HttpClient` from `IHttpClientFactory` per call. Every method is guarded by
 `IFeatureFlagService.RequireEnabled("EdFi")`.
