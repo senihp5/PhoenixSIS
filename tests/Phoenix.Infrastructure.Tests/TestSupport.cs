@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Phoenix.Core.Auditing;
 using Phoenix.Infrastructure.Auditing;
 using Phoenix.Infrastructure.Data;
@@ -15,6 +16,23 @@ internal static class TestSupport
 
     public static StudentIdentityService Identity(PhoenixDbContext db, ICurrentUser? user = null) =>
         new(db, Audit(db, user));
+
+    public const string Campus = "220822001";
+    public const string SecondCampus = "220822002";
+
+    public static CampusDirectory Campuses() =>
+        new(Options.Create(new PhoenixCampusOptions
+        {
+            Campuses =
+            [
+                new CampusOption { Number = Campus, Name = "New Heights Adult High School", LeaNumber = "220822" },
+                new CampusOption { Number = SecondCampus, Name = "Second Test Campus", LeaNumber = "220822" },
+                new CampusOption { Number = "BAD", Name = "Ignored - not 9 digits", LeaNumber = "220822" }
+            ]
+        }));
+
+    public static EnrollmentService Enrollments(PhoenixDbContext db, ICurrentUser? user = null) =>
+        new(db, Audit(db, user), Campuses());
 }
 
 internal sealed class FakeCurrentUser(AuditActor actor) : ICurrentUser

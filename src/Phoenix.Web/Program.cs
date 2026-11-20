@@ -76,6 +76,13 @@ builder.Services.AddScoped<IAuditLog, AuditLog>();
 // Canonical student identity resolution (PHX-5.3) — core, always registered.
 builder.Services.AddScoped<IStudentIdentityService, StudentIdentityService>();
 
+// Enrollment model (PHX-8.2) — core domain like identity. Campuses come from
+// the non-secret Phoenix:Campuses config section.
+builder.Services.Configure<PhoenixCampusOptions>(
+    builder.Configuration.GetSection(PhoenixCampusOptions.SectionName));
+builder.Services.AddSingleton<ICampusDirectory, CampusDirectory>();
+builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
+
 // Module registration (PHX-2.1) — every module's services, flag-gated at init.
 ModuleBootstrapper.RegisterModules(builder.Services, builder.Configuration);
 

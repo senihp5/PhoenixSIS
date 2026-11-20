@@ -81,6 +81,68 @@ namespace Phoenix.Infrastructure.Data.Migrations
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
+            modelBuilder.Entity("Phoenix.Infrastructure.Data.Enrollment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CampusNumber")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("nvarchar(9)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("EntryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EntryGradeLevel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly?>("ExitDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ExitReason")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<decimal>("FullTimeEquivalency")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("SchoolYear")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampusNumber", "SchoolYear");
+
+                    b.HasIndex("StudentId", "SchoolYear");
+
+                    b.HasIndex("StudentId", "CampusNumber", "EntryDate")
+                        .IsUnique();
+
+                    b.ToTable("Enrollment", (string)null);
+                });
+
             modelBuilder.Entity("Phoenix.Infrastructure.Data.Student", b =>
                 {
                     b.Property<Guid>("Id")
@@ -142,6 +204,17 @@ namespace Phoenix.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("StudentIdentifier", (string)null);
+                });
+
+            modelBuilder.Entity("Phoenix.Infrastructure.Data.Enrollment", b =>
+                {
+                    b.HasOne("Phoenix.Infrastructure.Data.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Student");
                 });
 
             modelBuilder.Entity("Phoenix.Infrastructure.Data.StudentIdentifier", b =>

@@ -17,6 +17,7 @@ public class PhoenixDbContext : DbContext
     public DbSet<Student> Students => Set<Student>();
     public DbSet<StudentIdentifier> StudentIdentifiers => Set<StudentIdentifier>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<Enrollment> Enrollments => Set<Enrollment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,6 +60,26 @@ public class PhoenixDbContext : DbContext
             e.HasIndex(a => new { a.StudentId, a.OccurredUtc });
             e.HasIndex(a => new { a.ActorId, a.OccurredUtc });
             e.HasIndex(a => a.OccurredUtc);
+        });
+
+        // Sprint 8 enrollment model. Restrict, not cascade: an enrollment is a
+        // record in its own right and must never vanish with a student row.
+        modelBuilder.Entity<Enrollment>(e =>
+        {
+            e.ToTable("Enrollment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CampusNumber).HasMaxLength(9).IsRequired();
+            e.Property(x => x.EntryGradeLevel).HasConversion<string>().HasMaxLength(20).IsRequired();
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20).IsRequired();
+            e.Property(x => x.ExitReason).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.FullTimeEquivalency).HasPrecision(5, 4);
+            e.HasIndex(x => new { x.StudentId, x.SchoolYear });
+            e.HasIndex(x => new { x.CampusNumber, x.SchoolYear });
+            e.HasIndex(x => new { x.StudentId, x.CampusNumber, x.EntryDate }).IsUnique();
+            e.HasOne(x => x.Student)
+                .WithMany()
+                .HasForeignKey(x => x.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
