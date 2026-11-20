@@ -19,7 +19,7 @@ src\Phoenix.Core\Modules\EdFi\        contracts: IEdFiApiClient, EdFiApiInfo, Ed
                                      EdFiStudentIdentificationCodeWrite, EdFiWriteResult, EdFiProblem
 src\Phoenix.Infrastructure\EdFi\      EdFiModule, EdFiApiOptions, EdFiApiClient,
                                      EdFiWritePayloads (internal), EdFiProblemParser (internal)
-src\Phoenix.Web\Components\Pages\EdFi\ Health.razor, Students.razor
+src\Phoenix.Web\Components\Pages\EdFi\ Health.razor, Students.razor, Sync.razor
 ```
 
 `EdFiModule : IModule` registers the client; one line in `ModuleBootstrapper.Modules`.
@@ -119,6 +119,12 @@ Registered as a **singleton** so the token cache persists; pulls a fresh
 - **`admin/edfi/health`** — reachability + auth status cards. Never throws on an
   unreachable API; shows a red status instead.
 - **`admin/edfi/students`** — first 25 students from the ODS.
+- **`admin/edfi/sync`** (PHX-7.3) — target fields (LEA, campus, school year, calendar code,
+  entry date) prefilled from config; **Preview** shows would-create / would-update /
+  skipped with the PHX numbers apply would use; **Run** is enabled only after a preview of
+  the same target and shows how many students it will send. Results table: student, Ed-Fi
+  unique ID, outcome badge, and for failures the resource, Problem Details summary and
+  correlationId. Config or API failures show as an alert; the page never throws.
 
 Both require the `RequireAdmin` policy, are flag-guarded in markup (friendly
 message when OFF), and render interactively (`InteractiveServer`). Nav links

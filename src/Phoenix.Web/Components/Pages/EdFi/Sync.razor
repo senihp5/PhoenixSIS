@@ -1,0 +1,267 @@
+@page "/admin/edfi/sync"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Modules.EdFi
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IStudentSyncService SyncService
+
+<PageTitle>Ed-Fi Student Sync</PageTitle>
+
+<h1>Ed-Fi Student Sync</h1>
+
+@if (!FeatureFlagService.IsEnabled("EdFi"))
+{
+    <div class="alert alert-info">
+        <h4>Ed-Fi Integration Not Enabled</h4>
+        <p>
+            This page requires the <code>EdFi</code> module. Enable it in the
+            active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else
+{
+    <p class="text-muted">
+        Pushes every Phoenix student to the Ed-Fi ODS: Student, LEA association,
+        enrollment (campus, school year, calendar) and the Local identification code.
+        <strong>Preview</strong> writes nothing. <strong>Run</strong> is enabled after a
+        preview of the same target and is safe to repeat - Ed-Fi writes are upserts.
+        <strong>Sample data only.</strong>
+    </p>
+
+    @if (_configError is not null)
+    {
+        <div class="alert alert-warning">
+            <strong>Sync defaults could not be read from configuration.</strong>
+            <pre class="mb-0">@_configError</pre>
+        </div>
+    }
+
+    <div class="row g-3 mb-3" style="max-width: 56rem;">
+        <div class="col-md-2">
+            <label class="form-label" for="leaId">LEA</label>
+            <input id="leaId" class="form-control" type="number" @bind="_leaId" disabled="@_busy" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="schoolId">Campus (school ID)</label>
+            <input id="schoolId" class="form-control" type="number" @bind="_schoolId" disabled="@_busy" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="schoolYear">School year</label>
+            <input id="schoolYear" class="form-control" type="number" @bind="_schoolYear" disabled="@_busy" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="calendarCode">Calendar code</label>
+            <input id="calendarCode" class="form-control" type="text" @bind="_calendarCode" disabled="@_busy" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="entryDate">Entry date</label>
+            <input id="entryDate" class="form-control" type="date" @bind="_entryDate" disabled="@_busy" />
+        </div>
+    </div>
+    <p class="form-text">
+        School year @_schoolYear = @(_schoolYear - 1)-@_schoolYear. Leave the calendar code blank to
+        enroll without a calendar reference.
+    </p>
+
+    <div class="mb-3">
+        <button class="btn btn-outline-primary me-2" @onclick="() => RunAsync(false)" disabled="@_busy">
+            Preview (dry run)
+        </button>
+        <button class="btn btn-primary" @onclick="() => RunAsync(true)" disabled="@(!CanApply)">
+            @RunLabel
+        </button>
+    </div>
+
+    @if (_busy)
+    {
+        <p><em>@(_running ? "Sending to Ed-Fi..." : "Previewing...")</em></p>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger">
+            <strong>The sync could not run.</strong>
+            <pre class="mb-0">@_error</pre>
+        </div>
+    }
+    else if (_result is not null)
+    {
+        <div class="alert @SummaryClass">
+            <strong>@(_result.Applied ? "Applied" : "Dry run")</strong> - @SummaryText
+        </div>
+
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Ed-Fi unique ID</th>
+                    <th>Outcome</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _result.Rows)
+                {
+                    <tr>
+                        <td>@row.DisplayName</td>
+                        <td><code>@(row.StudentUniqueId ?? "-")</code></td>
+                        <td><span class="badge @BadgeClass(row.Outcome)">@Label(row.Outcome)</span></td>
+                        <td>
+                            @if (row.Outcome == StudentSyncOutcome.Failed)
+                            {
+                                @if (row.FailedResource is not null)
+                                {
+                                    <div><strong>@row.FailedResource</strong></div>
+                                }
+                                @if (row.Problem is not null)
+                                {
+                                    <div>@row.Problem.Describe()</div>
+                                    @if (row.Problem.CorrelationId is not null)
+                                    {
+                                        <div class="text-muted small">correlationId <code>@row.Problem.CorrelationId</code></div>
+                                    }
+                                }
+                                @if (row.Reason is not null)
+                                {
+                                    <div>@row.Reason</div>
+                                }
+                            }
+                            else if (row.Reason is not null)
+                            {
+                                <span class="text-muted">@row.Reason</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private long _leaId;
+    private long _schoolId;
+    private int _schoolYear;
+    private string? _calendarCode;
+    private DateOnly _entryDate;
+
+    private StudentSyncResult? _result;
+    private EdFiSyncTarget? _previewedTarget;
+    private string? _configError;
+    private string? _error;
+    private bool _busy;
+    private bool _running;
+
+    private EdFiSyncTarget CurrentTarget => new(
+        _leaId,
+        _schoolId,
+        _schoolYear,
+        string.IsNullOrWhiteSpace(_calendarCode) ? null : _calendarCode.Trim(),
+        _entryDate);
+
+    private bool CanApply =>
+        !_busy
+        && _result is { Applied: false }
+        && _previewedTarget is not null
+        && _previewedTarget == CurrentTarget;
+
+    private string RunLabel =>
+        _result is { Applied: false } preview && CanApply
+            ? $"Run - send {preview.ToCreate + preview.ToUpdate} student(s)"
+            : "Run (preview first)";
+
+    private string SummaryText
+    {
+        get
+        {
+            if (_result is null)
+            {
+                return string.Empty;
+            }
+
+            var r = _result;
+            var text = r.Applied
+                ? $"{r.ToCreate} created, {r.ToUpdate} updated, {r.Skipped} skipped, {r.Failed} failed"
+                : $"{r.ToCreate} to create, {r.ToUpdate} to update, {r.Skipped} skipped";
+
+            return $"campus {r.Target.SchoolId}, school year {r.Target.SchoolYear}, {r.Total} student(s): {text}.";
+        }
+    }
+
+    private string SummaryClass => _result switch
+    {
+        { Applied: true, Failed: > 0 } => "alert-warning",
+        { Applied: true } => "alert-success",
+        _ => "alert-secondary"
+    };
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            var target = SyncService.GetDefaultTarget();
+            _leaId = target.LeaId;
+            _schoolId = target.SchoolId;
+            _schoolYear = target.SchoolYear;
+            _calendarCode = target.CalendarCode;
+            _entryDate = target.EntryDate;
+        }
+        catch (Exception ex)
+        {
+            _configError = ex.Message;
+        }
+    }
+
+    private async Task RunAsync(bool apply)
+    {
+        if (!FeatureFlagService.IsEnabled("EdFi"))
+        {
+            return;
+        }
+
+        if (apply && !CanApply)
+        {
+            return;
+        }
+
+        var target = CurrentTarget;
+        _busy = true;
+        _running = apply;
+        _error = null;
+
+        try
+        {
+            _result = await SyncService.SyncAllAsync(target, apply);
+            _previewedTarget = apply ? null : target;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _result = null;
+            _previewedTarget = null;
+        }
+
+        _busy = false;
+        _running = false;
+    }
+
+    private static string Label(StudentSyncOutcome outcome) => outcome switch
+    {
+        StudentSyncOutcome.WouldCreate => "Would create",
+        StudentSyncOutcome.WouldUpdate => "Would update",
+        StudentSyncOutcome.Created => "Created",
+        StudentSyncOutcome.Updated => "Updated",
+        StudentSyncOutcome.Skipped => "Skipped",
+        StudentSyncOutcome.Failed => "Failed",
+        _ => outcome.ToString()
+    };
+
+    private static string BadgeClass(StudentSyncOutcome outcome) => outcome switch
+    {
+        StudentSyncOutcome.Created or StudentSyncOutcome.Updated => "bg-success",
+        StudentSyncOutcome.WouldCreate or StudentSyncOutcome.WouldUpdate => "bg-secondary",
+        StudentSyncOutcome.Skipped => "bg-warning text-dark",
+        StudentSyncOutcome.Failed => "bg-danger",
+        _ => "bg-light text-dark"
+    };
+}
