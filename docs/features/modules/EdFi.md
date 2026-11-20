@@ -79,15 +79,23 @@ The sandbox key/secret are produced by `_tools\New-EdfiSandbox.ps1` into
 - **SSN guard:** `UpsertStudentIdentificationCodeAsync` throws before any network call for
   the `#SSN` identification system. Phoenix never sends Social Security numbers.
 - Logs carry resource, status, problem type and correlation id only — never the body.
-- Write order matters: student first, then the associations (a missing student is a 409).
+- Write order matters: student first (a missing student is a 409), then the enrollment, then
+  the other student records (403 until the enrollment exists).
 
 ### Student sync (PHX-7.2) — `IStudentSyncService`
 
 `SyncAllAsync(EdFiSyncTarget target, bool apply)` pushes every canonical Phoenix student.
 `GetDefaultTarget()` builds the target from config. Per student, in order: Student →
-StudentEducationOrganizationAssociation (LEA) → StudentSchoolAssociation (campus, entry
-date, school year, calendar, primarySchool, enrollment type, FTE) → StudentIdentificationCode
-(Local = the PHX number).
+StudentSchoolAssociation (campus, entry date, school year, calendar, primarySchool,
+enrollment type, FTE) → StudentEducationOrganizationAssociation (LEA) →
+StudentIdentificationCode (Local = the PHX number).
+
+**Order is forced by Ed-Fi authorization.** The enrollment must come straight after the
+student: relationship-based authorization only lets the client write the LEA association and
+the identification code for a student already enrolled in one of its schools. The first live
+run (PHX-7.4) used the card's order (LEA association before enrollment) and every student got
+`403 Authorization Denied` on studentEducationOrganizationAssociations with the hint "You may
+need to create a corresponding 'StudentSchoolAssociation' item".
 
 | Outcome | Meaning |
 |---|---|

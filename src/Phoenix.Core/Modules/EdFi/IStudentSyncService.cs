@@ -58,10 +58,13 @@ public sealed record StudentSyncResult(
 
 /// <summary>
 /// Pushes canonical Phoenix students to the Ed-Fi ODS (PHX-7.2). Per
-/// student: Student, StudentEducationOrganizationAssociation (LEA),
-/// StudentSchoolAssociation (campus/year/calendar), StudentIdentificationCode
-/// (Local). The Ed-Fi studentUniqueId is a mapped identifier (ADR-002,
-/// source system "Ed-Fi"). Dry run writes nothing anywhere; apply is
+/// student, in this order: Student, StudentSchoolAssociation
+/// (campus/year/calendar), StudentEducationOrganizationAssociation (LEA),
+/// StudentIdentificationCode (Local). The enrollment must precede the other
+/// student records: Ed-Fi's relationship-based authorization rejects them
+/// (403) until the student is enrolled in one of the client's schools.
+/// The Ed-Fi studentUniqueId is a mapped identifier (ADR-002, source
+/// system "Ed-Fi"). Dry run writes nothing anywhere; apply is
 /// idempotent; one student's failure never stops the batch.
 /// </summary>
 public interface IStudentSyncService

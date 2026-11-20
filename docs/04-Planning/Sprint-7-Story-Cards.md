@@ -108,3 +108,5 @@ As the team, I want the real sync proven against the DS 6.1 sandbox and document
 
 ### Definition of Done
 - [ ] Live sync verified on DS 6.1; idempotent; errors legible; docs updated; `main` green; sprint tagged.
+
+**Correction found in the first live run (2026-11-20):** the PHX-7.2 write order above (LEA association before enrollment) is wrong for the Ed-Fi Sandbox claim set. All 13 students got 403 on `studentEducationOrganizationAssociations`; the API hint said to create the `StudentSchoolAssociation` first. Correct order: Student -> StudentSchoolAssociation -> StudentEducationOrganizationAssociation -> StudentIdentificationCode.

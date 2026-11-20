@@ -154,12 +154,12 @@ public sealed class StudentSyncService : IStudentSyncService
             if (!studentWrite.Success)
                 return Failed(student.Id, name, uniqueId, studentWrite);
 
-            var edOrgWrite = await _client.UpsertStudentEducationOrganizationAssociationAsync(
-                new EdFiStudentEdOrgWrite(uniqueId, target.LeaId),
-                cancellationToken);
-            if (!edOrgWrite.Success)
-                return Failed(student.Id, name, uniqueId, edOrgWrite);
-
+            // The enrollment must come right after the student. Ed-Fi's
+            // relationship-based authorization only lets this API client
+            // write StudentEducationOrganizationAssociation and
+            // StudentIdentificationCode for a student already enrolled in one
+            // of its schools; before the SSA exists those writes are 403
+            // (found in the first live run, PHX-7.4, 2026-11-20).
             var enrollmentWrite = await _client.UpsertStudentSchoolAssociationAsync(
                 new EdFiEnrollmentWrite(
                     uniqueId,
@@ -174,6 +174,12 @@ public sealed class StudentSyncService : IStudentSyncService
                 cancellationToken);
             if (!enrollmentWrite.Success)
                 return Failed(student.Id, name, uniqueId, enrollmentWrite);
+
+            var edOrgWrite = await _client.UpsertStudentEducationOrganizationAssociationAsync(
+                new EdFiStudentEdOrgWrite(uniqueId, target.LeaId),
+                cancellationToken);
+            if (!edOrgWrite.Success)
+                return Failed(student.Id, name, uniqueId, edOrgWrite);
 
             var codeWrite = await _client.UpsertStudentIdentificationCodeAsync(
                 new EdFiStudentIdentificationCodeWrite(

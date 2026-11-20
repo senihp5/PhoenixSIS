@@ -48,7 +48,7 @@ public class StudentSyncServiceTests
         Assert.Equal("PHX-000001", row.StudentUniqueId);
 
         Assert.Equal(
-            new[] { "students", "studentEducationOrganizationAssociations", "studentSchoolAssociations", "studentIdentificationCodes" },
+            new[] { "students", "studentSchoolAssociations", "studentEducationOrganizationAssociations", "studentIdentificationCodes" },
             client.Calls.Select(c => c.Resource));
 
         var student = Assert.IsType<EdFiStudentWrite>(client.Calls[0].Payload);
@@ -56,10 +56,10 @@ public class StudentSyncServiceTests
         Assert.Equal("Maria", student.FirstName);
         Assert.Equal("Hernandez", student.LastSurname);
 
-        var edOrg = Assert.IsType<EdFiStudentEdOrgWrite>(client.Calls[1].Payload);
+        var edOrg = Assert.IsType<EdFiStudentEdOrgWrite>(client.Calls[2].Payload);
         Assert.Equal(220822, edOrg.EducationOrganizationId);
 
-        var enrollment = Assert.IsType<EdFiEnrollmentWrite>(client.Calls[2].Payload);
+        var enrollment = Assert.IsType<EdFiEnrollmentWrite>(client.Calls[1].Payload);
         Assert.Equal(220822001, enrollment.SchoolId);
         Assert.Equal(new DateOnly(2026, 8, 17), enrollment.EntryDate);
         Assert.Equal(2027, enrollment.SchoolYear);
@@ -131,6 +131,7 @@ public class StudentSyncServiceTests
         Assert.Equal("studentSchoolAssociations", failed.FailedResource);
         Assert.Same(problem, failed.Problem);
 
+        Assert.DoesNotContain(client.Calls, c => c.UniqueId == "PHX-000002" && c.Resource == "studentEducationOrganizationAssociations");
         Assert.DoesNotContain(client.Calls, c => c.UniqueId == "PHX-000002" && c.Resource == "studentIdentificationCodes");
         Assert.Contains(client.Calls, c => c.UniqueId == "PHX-000003" && c.Resource == "studentIdentificationCodes");
 
