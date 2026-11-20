@@ -141,13 +141,14 @@ else
 
     private string? _bulkCampus;
     private int _bulkYear = CurrentSchoolYear();
-    private DateOnly _bulkEntry = new(CurrentSchoolYear() - 1, 8, 1);
+    private DateOnly? _bulkEntry;
     private GradeLevel _bulkGrade = GradeLevel.AdultEducation;
     private BulkEnrollRequest? _previewedRequest;
     private BulkEnrollResult? _bulkResult;
     private string? _bulkError;
 
-    private BulkEnrollRequest CurrentBulkRequest => new(_bulkCampus ?? string.Empty, _bulkYear, _bulkEntry, _bulkGrade);
+    private BulkEnrollRequest CurrentBulkRequest =>
+        new(_bulkCampus ?? string.Empty, _bulkYear, _bulkEntry ?? default, _bulkGrade);
 
     private bool CanApplyBulk =>
         !_busy
@@ -197,6 +198,14 @@ else
     {
         if (!FeatureFlagService.IsEnabled("Students") || (apply && !CanApplyBulk))
         {
+            return;
+        }
+
+        if (_bulkEntry is null)
+        {
+            _bulkResult = null;
+            _previewedRequest = null;
+            _bulkError = "Enter the entry date. It is sent to Ed-Fi and cannot be changed after the enrollment is created.";
             return;
         }
 

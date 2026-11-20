@@ -1,12 +1,14 @@
 namespace Phoenix.Core.Modules.EdFi;
 
-/// <summary>Where the sync writes: the LEA, campus, school year and calendar.</summary>
+/// <summary>
+/// Where the sync writes: the LEA, campus, school year and calendar. Entry
+/// and exit dates come from the Phoenix enrollments (PHX-8.4), not the target.
+/// </summary>
 public sealed record EdFiSyncTarget(
     long LeaId,
     long SchoolId,
     int SchoolYear,
-    string? CalendarCode,
-    DateOnly EntryDate);
+    string? CalendarCode);
 
 public enum StudentSyncOutcome
 {
@@ -22,7 +24,11 @@ public enum StudentSyncOutcome
     /// <summary>Applied: the student already existed in Ed-Fi (HTTP 200) and every write succeeded.</summary>
     Updated,
 
-    /// <summary>Not sent: the Phoenix record lacks a field Ed-Fi requires (for example birth date).</summary>
+    /// <summary>
+    /// Not sent: no Phoenix enrollment at the target campus for the target
+    /// school year, or the record lacks something Ed-Fi requires (birth date,
+    /// a descriptor mapping). <see cref="StudentSyncRow.Reason"/> says which.
+    /// </summary>
     Skipped,
 
     /// <summary>Applied: one write failed. <see cref="StudentSyncRow.FailedResource"/> says which.</summary>
@@ -58,14 +64,19 @@ public sealed record StudentSyncResult(
 
 /// <summary>
 /// Pushes canonical Phoenix students to the Ed-Fi ODS (PHX-7.2). Per
-/// student, in this order: Student, StudentSchoolAssociation
-/// (campus/year/calendar), StudentEducationOrganizationAssociation (LEA),
+/// student, in this order: Student, one StudentSchoolAssociation per
+/// Phoenix enrollment at the target campus for the target school year
+/// (entry/exit dates, grade, kind, FTE, primary - PHX-8.4),
+/// StudentEducationOrganizationAssociation (LEA),
 /// StudentIdentificationCode (Local). The enrollment must precede the other
 /// student records: Ed-Fi's relationship-based authorization rejects them
 /// (403) until the student is enrolled in one of the client's schools.
 /// The Ed-Fi studentUniqueId is a mapped identifier (ADR-002, source
-/// system "Ed-Fi"). Dry run writes nothing anywhere; apply is
-/// idempotent; one student's failure never stops the batch.
+/// system "Ed-Fi"). Dry run sends nothing to Ed-Fi and changes no student
+/// data; apply is idempotent; one student's failure never stops the batch.
+/// Both are audited per student listed (SyncPreview / SyncApply, ADR-004)
+/// before anything is shown or sent; if that audit write fails the call
+/// throws.
 /// </summary>
 public interface IStudentSyncService
 {

@@ -32,16 +32,63 @@ public sealed class EdFiApiOptions
     public int SchoolYear { get; set; } = 2027;
     public string? CalendarCode { get; set; } = "220822001-2027";
 
-    /// <summary>Entry date sent on new enrollments (yyyy-MM-dd).</summary>
-    public string DefaultEntryDate { get; set; } = "2026-08-17";
+    // PHX-8.4 boundary mapping: Phoenix codes (enum names in
+    // Phoenix.Core.Students) -> Ed-Fi descriptor URIs. Every URI below was
+    // read from the live nh-edfi-cus descriptors on 2026-11-20. Override a
+    // single key in configuration, e.g.
+    // EdFiApi:ExitWithdrawTypeDescriptors:NonAttendance.
 
-    public string DefaultEntryGradeLevelDescriptor { get; set; } =
-        "uri://ed-fi.org/GradeLevelDescriptor#Adult Education";
+    /// <summary>Phoenix GradeLevel -> Ed-Fi GradeLevelDescriptor.</summary>
+    public Dictionary<string, string> GradeLevelDescriptors { get; set; } = new()
+    {
+        ["AdultEducation"] = "uri://ed-fi.org/GradeLevelDescriptor#Adult Education",
+        ["Grade09"] = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
+        ["Grade10"] = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
+        ["Grade11"] = "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade",
+        ["Grade12"] = "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade",
+        ["Ungraded"] = "uri://ed-fi.org/GradeLevelDescriptor#Ungraded"
+    };
 
-    public string? DefaultEnrollmentTypeDescriptor { get; set; } =
-        "uri://ed-fi.org/EnrollmentTypeDescriptor#Current";
+    /// <summary>Phoenix EnrollmentKind -> Ed-Fi EnrollmentTypeDescriptor.</summary>
+    public Dictionary<string, string> EnrollmentTypeDescriptors { get; set; } = new()
+    {
+        ["Regular"] = "uri://ed-fi.org/EnrollmentTypeDescriptor#Current",
+        ["Summer"] = "uri://ed-fi.org/EnrollmentTypeDescriptor#Summer",
+        ["Preregistered"] = "uri://ed-fi.org/EnrollmentTypeDescriptor#Preregistered"
+    };
 
-    public double? DefaultFullTimeEquivalency { get; set; } = 1.0;
+    /// <summary>
+    /// Phoenix ExitReason -> Ed-Fi ExitWithdrawTypeDescriptor. NonAttendance
+    /// has no exact core Ed-Fi value ("No show" means never attended), so it
+    /// maps to Withdrawn until the Texas leaver codes arrive with the TX
+    /// extension.
+    /// </summary>
+    public Dictionary<string, string> ExitWithdrawTypeDescriptors { get; set; } = new()
+    {
+        ["Graduated"] = "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Graduated",
+        ["TransferredOut"] = "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Transferred",
+        ["Withdrew"] = "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Withdrawn",
+        ["NonAttendance"] = "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Withdrawn",
+        ["Other"] = "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Other"
+    };
+
+    /// <summary>
+    /// Looks a Phoenix code up in one of the maps above. Case-insensitive,
+    /// because configuration keys are. Null when the code is unmapped or
+    /// mapped to an empty value.
+    /// </summary>
+    public static string? FindDescriptor(Dictionary<string, string> map, string phoenixCode)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+
+        foreach (var pair in map)
+        {
+            if (string.Equals(pair.Key, phoenixCode, StringComparison.OrdinalIgnoreCase))
+                return string.IsNullOrWhiteSpace(pair.Value) ? null : pair.Value;
+        }
+
+        return null;
+    }
 
     public string LocalIdentificationSystemDescriptor { get; set; } =
         "uri://ed-fi.org/StudentIdentificationSystemDescriptor#Local";

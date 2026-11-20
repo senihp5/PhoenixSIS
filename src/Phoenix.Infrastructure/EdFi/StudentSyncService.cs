@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Phoenix.Core.Auditing;
 using Phoenix.Core.Features;
 using Phoenix.Core.Modules.EdFi;
 using Phoenix.Core.Students;
@@ -10,7 +11,8 @@ using Phoenix.Infrastructure.Data;
 namespace Phoenix.Infrastructure.EdFi;
 
 /// <summary>
-/// PHX-7.2 Phoenix -> Ed-Fi student sync. See <see cref="IStudentSyncService"/>.
+/// Phoenix -> Ed-Fi student sync (PHX-7.2, enrollments from Phoenix since
+/// PHX-8.4). See <see cref="IStudentSyncService"/>.
 ///
 /// Identity: the Ed-Fi studentUniqueId is a mapped identifier (ADR-002),
 /// source system "Ed-Fi", value PHX-NNNNNN (next number after the highest
@@ -19,18 +21,29 @@ namespace Phoenix.Infrastructure.EdFi;
 /// run and Ed-Fi never collects orphan records under abandoned numbers.
 /// Every run re-upserts mapped students (Ed-Fi POST is upsert by natural
 /// key), so a failed or changed student heals on the next apply.
+///
+/// Enrollment: one StudentSchoolAssociation per Phoenix enrollment at the
+/// target campus for the target school year. Phoenix codes are mapped to
+/// Ed-Fi descriptors here, at the boundary (EdFiApiOptions). A student with
+/// no matching enrollment is skipped and gets no Ed-Fi number.
+///
+/// Audit (ADR-004): one SyncPreview or SyncApply event per student listed,
+/// saved BEFORE anything is shown or sent. If the audit write fails, the
+/// sync throws and nothing reaches Ed-Fi (fail closed).
 /// </summary>
 public sealed class StudentSyncService : IStudentSyncService
 {
     public const string EdFiSourceSystem = "Ed-Fi";
     private const string FeatureFlag = "EdFi";
     private const string UniqueIdPrefix = "PHX-";
+    private const string AuditEntityType = "Student";
 
     private readonly PhoenixDbContext _db;
     private readonly IStudentIdentityService _identity;
     private readonly IEdFiApiClient _client;
     private readonly EdFiApiOptions _options;
     private readonly IFeatureFlagService _features;
+    private readonly IAuditLog _audit;
     private readonly ILogger<StudentSyncService> _logger;
 
     public StudentSyncService(
@@ -39,6 +52,7 @@ public sealed class StudentSyncService : IStudentSyncService
         IEdFiApiClient client,
         IOptions<EdFiApiOptions> options,
         IFeatureFlagService features,
+        IAuditLog audit,
         ILogger<StudentSyncService> logger)
     {
         _db = db;
@@ -46,29 +60,16 @@ public sealed class StudentSyncService : IStudentSyncService
         _client = client;
         _options = options.Value;
         _features = features;
+        _audit = audit;
         _logger = logger;
     }
 
-    public EdFiSyncTarget GetDefaultTarget()
-    {
-        if (!DateOnly.TryParseExact(
-                _options.DefaultEntryDate,
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var entryDate))
-        {
-            throw new InvalidOperationException(
-                $"EdFiApi:DefaultEntryDate '{_options.DefaultEntryDate}' is not a yyyy-MM-dd date.");
-        }
-
-        return new EdFiSyncTarget(
+    public EdFiSyncTarget GetDefaultTarget() =>
+        new(
             _options.DefaultLeaId,
             _options.DefaultSchoolId,
             _options.SchoolYear,
-            string.IsNullOrWhiteSpace(_options.CalendarCode) ? null : _options.CalendarCode,
-            entryDate);
-    }
+            string.IsNullOrWhiteSpace(_options.CalendarCode) ? null : _options.CalendarCode);
 
     public async Task<StudentSyncResult> SyncAllAsync(
         EdFiSyncTarget target,
@@ -86,36 +87,91 @@ public sealed class StudentSyncService : IStudentSyncService
             .ThenBy(s => s.Id)
             .ToListAsync(cancellationToken);
 
+        var campusNumber = target.SchoolId.ToString(CultureInfo.InvariantCulture);
+        var yearLabel = FormatYear(target.SchoolYear);
+
+        var enrollments = await _db.Enrollments
+            .AsNoTracking()
+            .Where(e => e.CampusNumber == campusNumber && e.SchoolYear == target.SchoolYear)
+            .ToListAsync(cancellationToken);
+        var enrollmentsByStudent = enrollments.ToLookup(e => e.StudentId);
+
         var nextNumber = await GetNextUniqueNumberAsync(cancellationToken);
-        var rows = new List<StudentSyncRow>(students.Count);
+        var plans = new List<SyncPlan>(students.Count);
 
         foreach (var student in students)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
             var name = $"{student.FirstName} {student.LastName}";
             var mappedId = student.Identifiers
                 .FirstOrDefault(i => i.SourceSystem == EdFiSourceSystem)?.Value;
 
             if (student.BirthDate is null)
             {
-                rows.Add(new StudentSyncRow(
-                    student.Id, name, mappedId, StudentSyncOutcome.Skipped,
-                    Reason: "No birth date in Phoenix; Ed-Fi requires one."));
+                plans.Add(SyncPlan.Skip(student, name, mappedId,
+                    "No birth date in Phoenix; Ed-Fi requires one."));
                 continue;
             }
 
-            var uniqueId = mappedId ?? FormatUniqueId(nextNumber++);
+            var mine = enrollmentsByStudent[student.Id]
+                .OrderBy(e => e.EntryDate)
+                .ToList();
+
+            if (mine.Count == 0)
+            {
+                plans.Add(SyncPlan.Skip(student, name, mappedId,
+                    $"No {yearLabel} enrollment at campus {campusNumber}."));
+                continue;
+            }
+
+            var uniqueId = mappedId ?? FormatUniqueId(nextNumber);
+            var writes = new List<EdFiEnrollmentWrite>(mine.Count);
+            string? mappingError = null;
+
+            foreach (var enrollment in mine)
+            {
+                if (!TryMapEnrollment(enrollment, uniqueId, target, out var write, out mappingError))
+                    break;
+
+                writes.Add(write!);
+            }
+
+            if (mappingError is not null)
+            {
+                plans.Add(SyncPlan.Skip(student, name, mappedId, mappingError));
+                continue;
+            }
+
+            if (mappedId is null)
+                nextNumber++;
+
+            plans.Add(new SyncPlan(student, name, uniqueId, mappedId is null, writes, null));
+        }
+
+        await RecordAuditAsync(plans, apply, campusNumber, yearLabel, cancellationToken);
+
+        var rows = new List<StudentSyncRow>(plans.Count);
+
+        foreach (var plan in plans)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (plan.SkipReason is not null)
+            {
+                rows.Add(new StudentSyncRow(
+                    plan.Student.Id, plan.Name, plan.UniqueId, StudentSyncOutcome.Skipped,
+                    Reason: plan.SkipReason));
+                continue;
+            }
 
             if (!apply)
             {
                 rows.Add(new StudentSyncRow(
-                    student.Id, name, uniqueId,
-                    mappedId is null ? StudentSyncOutcome.WouldCreate : StudentSyncOutcome.WouldUpdate));
+                    plan.Student.Id, plan.Name, plan.UniqueId,
+                    plan.IsNew ? StudentSyncOutcome.WouldCreate : StudentSyncOutcome.WouldUpdate));
                 continue;
             }
 
-            rows.Add(await SyncOneAsync(student, name, uniqueId, mappedId is null, target, cancellationToken));
+            rows.Add(await SyncOneAsync(plan, target, cancellationToken));
         }
 
         var result = new StudentSyncResult(target, apply, rows);
@@ -127,17 +183,112 @@ public sealed class StudentSyncService : IStudentSyncService
         return result;
     }
 
-    private async Task<StudentSyncRow> SyncOneAsync(
-        Student student,
-        string name,
+    private async Task RecordAuditAsync(
+        List<SyncPlan> plans,
+        bool apply,
+        string campusNumber,
+        string yearLabel,
+        CancellationToken cancellationToken)
+    {
+        if (plans.Count == 0)
+            return;
+
+        var action = apply ? AuditAction.SyncApply : AuditAction.SyncPreview;
+        var scope = $"campus {campusNumber}, school year {yearLabel}";
+
+        var entries = plans.Select(plan => new AuditEntry(
+            action,
+            AuditEntityType,
+            plan.Student.Id,
+            plan.Student.Id,
+            plan.SkipReason is not null
+                ? $"Ed-Fi sync {(apply ? "apply" : "preview")}: {scope}; not sent (skipped)."
+                : apply
+                    ? $"Ed-Fi sync apply: {scope}; sent to Ed-Fi."
+                    : $"Ed-Fi sync preview: {scope}; listed."));
+
+        try
+        {
+            await _audit.RecordAsync(entries, cancellationToken);
+        }
+        catch
+        {
+            // Leave no half-staged audit rows on the scoped context for a
+            // later save to pick up; the caller sees the failure and nothing
+            // is shown or sent (ADR-004 fail closed).
+            _db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private bool TryMapEnrollment(
+        Enrollment enrollment,
         string uniqueId,
-        bool reserveIdentifier,
+        EdFiSyncTarget target,
+        out EdFiEnrollmentWrite? write,
+        out string? error)
+    {
+        write = null;
+
+        var grade = EdFiApiOptions.FindDescriptor(_options.GradeLevelDescriptors, enrollment.EntryGradeLevel.ToString());
+        if (grade is null)
+        {
+            error = $"No Ed-Fi descriptor is configured for grade level '{enrollment.EntryGradeLevel}' (EdFiApi:GradeLevelDescriptors).";
+            return false;
+        }
+
+        var kind = EdFiApiOptions.FindDescriptor(_options.EnrollmentTypeDescriptors, enrollment.Kind.ToString());
+        if (kind is null)
+        {
+            error = $"No Ed-Fi descriptor is configured for enrollment kind '{enrollment.Kind}' (EdFiApi:EnrollmentTypeDescriptors).";
+            return false;
+        }
+
+        string? exitType = null;
+        if (enrollment.ExitDate is not null)
+        {
+            if (enrollment.ExitReason is not { } reason)
+            {
+                error = "The enrollment has an exit date but no exit reason.";
+                return false;
+            }
+
+            exitType = EdFiApiOptions.FindDescriptor(_options.ExitWithdrawTypeDescriptors, reason.ToString());
+            if (exitType is null)
+            {
+                error = $"No Ed-Fi descriptor is configured for exit reason '{reason}' (EdFiApi:ExitWithdrawTypeDescriptors).";
+                return false;
+            }
+        }
+
+        write = new EdFiEnrollmentWrite(
+            uniqueId,
+            target.SchoolId,
+            enrollment.EntryDate,
+            grade,
+            target.SchoolYear,
+            target.CalendarCode,
+            PrimarySchool: enrollment.IsPrimary,
+            EnrollmentTypeDescriptor: kind,
+            FullTimeEquivalency: (double)enrollment.FullTimeEquivalency,
+            ExitWithdrawDate: enrollment.ExitDate,
+            ExitWithdrawTypeDescriptor: exitType);
+        error = null;
+        return true;
+    }
+
+    private async Task<StudentSyncRow> SyncOneAsync(
+        SyncPlan plan,
         EdFiSyncTarget target,
         CancellationToken cancellationToken)
     {
+        var student = plan.Student;
+        var name = plan.Name;
+        var uniqueId = plan.UniqueId!;
+
         try
         {
-            if (reserveIdentifier)
+            if (plan.IsNew)
             {
                 await _identity.AddIdentifierAsync(
                     student.Id, EdFiSourceSystem, uniqueId, cancellationToken);
@@ -149,16 +300,6 @@ public sealed class StudentSyncService : IStudentSyncService
                 student.LastName,
                 student.BirthDate!.Value,
                 student.MiddleName);
-            var enrollment = new EdFiEnrollmentWrite(
-                uniqueId,
-                target.SchoolId,
-                target.EntryDate,
-                _options.DefaultEntryGradeLevelDescriptor,
-                target.SchoolYear,
-                target.CalendarCode,
-                PrimarySchool: true,
-                EnrollmentTypeDescriptor: _options.DefaultEnrollmentTypeDescriptor,
-                FullTimeEquivalency: _options.DefaultFullTimeEquivalency);
 
             // Ed-Fi relationship-based authorization (both rules found in the
             // PHX-7.4 live runs, 2026-11-20):
@@ -171,26 +312,26 @@ public sealed class StudentSyncService : IStudentSyncService
             //  2. The LEA association and identification code are 403 until
             //     the enrollment exists, so they always come after it.
             var studentWrite = await _client.UpsertStudentAsync(studentRecord, cancellationToken);
-            var enrolled = false;
+            var enrollmentsSent = 0;
 
             if (studentWrite.StatusCode == 403)
             {
                 var earlyEnrollment = await _client.UpsertStudentSchoolAssociationAsync(
-                    enrollment, cancellationToken);
+                    plan.Enrollments[0], cancellationToken);
                 if (!earlyEnrollment.Success)
                     return Failed(student.Id, name, uniqueId, earlyEnrollment);
 
-                enrolled = true;
+                enrollmentsSent = 1;
                 studentWrite = await _client.UpsertStudentAsync(studentRecord, cancellationToken);
             }
 
             if (!studentWrite.Success)
                 return Failed(student.Id, name, uniqueId, studentWrite);
 
-            if (!enrolled)
+            for (var i = enrollmentsSent; i < plan.Enrollments.Count; i++)
             {
                 var enrollmentWrite = await _client.UpsertStudentSchoolAssociationAsync(
-                    enrollment, cancellationToken);
+                    plan.Enrollments[i], cancellationToken);
                 if (!enrollmentWrite.Success)
                     return Failed(student.Id, name, uniqueId, enrollmentWrite);
             }
@@ -272,4 +413,23 @@ public sealed class StudentSyncService : IStudentSyncService
 
     private static string FormatUniqueId(int number) =>
         UniqueIdPrefix + number.ToString("D6", CultureInfo.InvariantCulture);
+
+    private static string FormatYear(int schoolYear) => $"{schoolYear - 1}-{schoolYear % 100:D2}";
+
+    /// <summary>
+    /// What the sync will do for one student. <see cref="UniqueId"/> is the
+    /// mapped Ed-Fi id, or the number apply would assign; for a skipped
+    /// student it is the mapped id if there is one, otherwise null.
+    /// </summary>
+    private sealed record SyncPlan(
+        Student Student,
+        string Name,
+        string? UniqueId,
+        bool IsNew,
+        IReadOnlyList<EdFiEnrollmentWrite> Enrollments,
+        string? SkipReason)
+    {
+        public static SyncPlan Skip(Student student, string name, string? mappedId, string reason) =>
+            new(student, name, mappedId, false, [], reason);
+    }
 }

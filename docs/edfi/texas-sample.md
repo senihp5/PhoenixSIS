@@ -96,6 +96,35 @@ Sprint 7 sync.
   `teds-gap-analysis.md` (the vendor-registration blocker was resolved in §5 —
   TEA has no vendor registration).
 
+## Enrollment descriptors (probed live 2026-11-20, PHX-8.4)
+
+Read from nh-edfi-cus (`/data/v3/ed-fi/...Descriptors`). The sync maps Phoenix codes to
+these at the EdFi boundary; defaults live in `EdFiApiOptions` and each key can be
+overridden in config (`EdFiApi:GradeLevelDescriptors:<code>` and so on).
+
+| Phoenix code | Ed-Fi descriptor URI |
+|---|---|
+| GradeLevel.AdultEducation | `uri://ed-fi.org/GradeLevelDescriptor#Adult Education` |
+| GradeLevel.Grade09 | `uri://ed-fi.org/GradeLevelDescriptor#Ninth grade` |
+| GradeLevel.Grade10 | `uri://ed-fi.org/GradeLevelDescriptor#Tenth grade` |
+| GradeLevel.Grade11 | `uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade` |
+| GradeLevel.Grade12 | `uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade` |
+| GradeLevel.Ungraded | `uri://ed-fi.org/GradeLevelDescriptor#Ungraded` |
+| EnrollmentKind.Regular | `uri://ed-fi.org/EnrollmentTypeDescriptor#Current` |
+| EnrollmentKind.Summer | `uri://ed-fi.org/EnrollmentTypeDescriptor#Summer` |
+| EnrollmentKind.Preregistered | `uri://ed-fi.org/EnrollmentTypeDescriptor#Preregistered` |
+| ExitReason.Graduated | `uri://ed-fi.org/ExitWithdrawTypeDescriptor#Graduated` |
+| ExitReason.TransferredOut | `uri://ed-fi.org/ExitWithdrawTypeDescriptor#Transferred` |
+| ExitReason.Withdrew | `uri://ed-fi.org/ExitWithdrawTypeDescriptor#Withdrawn` |
+| ExitReason.NonAttendance | `uri://ed-fi.org/ExitWithdrawTypeDescriptor#Withdrawn` (no exact core value) |
+| ExitReason.Other | `uri://ed-fi.org/ExitWithdrawTypeDescriptor#Other` |
+
+The ODS has 3 enrollment types (all mapped) and 15 exit/withdraw types. Unused exit types:
+Completed, Died or is permanently incapacitated, Dropout, End of school year, Enrolled in
+a high school diploma program, Expelled, Incarcerated, Invalid enrollment, Involuntarily
+Removed, No show, Reached maximum age. "No show" means the student never attended, so it is
+not used for NonAttendance. Texas leaver codes replace this mapping with the TX extension.
+
 ## Reset / re-run
 
 Both seeders are idempotent and safe to re-run. If the Ed-Fi sandbox is rebuilt

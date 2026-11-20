@@ -22,10 +22,13 @@
 else
 {
     <p class="text-muted">
-        Pushes every Phoenix student to the Ed-Fi ODS: Student, LEA association,
-        enrollment (campus, school year, calendar) and the Local identification code.
-        <strong>Preview</strong> writes nothing. <strong>Run</strong> is enabled after a
+        Pushes every Phoenix student enrolled at the campus for the school year to the
+        Ed-Fi ODS: Student, one enrollment per Phoenix enrollment (entry and exit dates,
+        grade, kind, FTE), LEA association and the Local identification code. Students
+        with no matching Phoenix enrollment are skipped.
+        <strong>Preview</strong> sends nothing. <strong>Run</strong> is enabled after a
         preview of the same target and is safe to repeat - Ed-Fi writes are upserts.
+        Preview and Run are recorded in the audit trail for every student listed.
         <strong>Sample data only.</strong>
     </p>
 
@@ -54,14 +57,11 @@ else
             <label class="form-label" for="calendarCode">Calendar code</label>
             <input id="calendarCode" class="form-control" type="text" @bind="_calendarCode" disabled="@_busy" />
         </div>
-        <div class="col-md-2">
-            <label class="form-label" for="entryDate">Entry date</label>
-            <input id="entryDate" class="form-control" type="date" @bind="_entryDate" disabled="@_busy" />
-        </div>
     </div>
     <p class="form-text">
         School year @_schoolYear = @(_schoolYear - 1)-@_schoolYear. Leave the calendar code blank to
-        enroll without a calendar reference.
+        enroll without a calendar reference. Entry and exit dates come from each student's
+        Phoenix enrollment.
     </p>
 
     <div class="mb-3">
@@ -143,7 +143,6 @@ else
     private long _schoolId;
     private int _schoolYear;
     private string? _calendarCode;
-    private DateOnly _entryDate;
 
     private StudentSyncResult? _result;
     private EdFiSyncTarget? _previewedTarget;
@@ -156,8 +155,7 @@ else
         _leaId,
         _schoolId,
         _schoolYear,
-        string.IsNullOrWhiteSpace(_calendarCode) ? null : _calendarCode.Trim(),
-        _entryDate);
+        string.IsNullOrWhiteSpace(_calendarCode) ? null : _calendarCode.Trim());
 
     private bool CanApply =>
         !_busy
@@ -204,7 +202,6 @@ else
             _schoolId = target.SchoolId;
             _schoolYear = target.SchoolYear;
             _calendarCode = target.CalendarCode;
-            _entryDate = target.EntryDate;
         }
         catch (Exception ex)
         {

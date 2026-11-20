@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Phoenix.Core.Auditing;
 using Phoenix.Core.Features;
 using Phoenix.Core.Modules.EdFi;
 using Phoenix.Core.Students;
@@ -13,7 +14,9 @@ namespace Phoenix.Infrastructure.Tests;
 public class StudentSyncServiceTests
 {
     private static readonly EdFiSyncTarget Target =
-        new(220822, 220822001, 2027, "220822001-2027", new DateOnly(2026, 8, 17));
+        new(220822, 220822001, 2027, "220822001-2027");
+
+    private static readonly DateOnly EntryDate = new(2026, 8, 17);
 
     [Fact]
     public async Task DryRun_classifies_and_previews_ids_without_writing()
@@ -201,6 +204,166 @@ public class StudentSyncServiceTests
     }
 
     [Fact]
+    public async Task Student_without_a_matching_enrollment_is_skipped_and_gets_no_number()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, false, ("Ana", "Alvarez"), ("Ben", "Brooks"), ("Cara", "Cruz"));
+        await EnrollAsync(db, ids[0]);
+        await EnrollAsync(db, ids[1], campus: TestSupport.SecondCampus);
+        await EnrollAsync(db, ids[2]);
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        var skipped = result.Rows.Single(r => r.Outcome == StudentSyncOutcome.Skipped);
+        Assert.Equal("Ben Brooks", skipped.DisplayName);
+        Assert.Null(skipped.StudentUniqueId);
+        Assert.Equal("No 2026-27 enrollment at campus 220822001.", skipped.Reason);
+        Assert.DoesNotContain(client.Calls, c => c.Payload is EdFiStudentWrite { FirstName: "Ben" });
+        Assert.Equal("PHX-000001", result.Rows.Single(r => r.DisplayName == "Ana Alvarez").StudentUniqueId);
+        Assert.Equal("PHX-000002", result.Rows.Single(r => r.DisplayName == "Cara Cruz").StudentUniqueId);
+        Assert.Equal(2, await db.StudentIdentifiers.CountAsync(i => i.SourceSystem == "Ed-Fi"));
+    }
+
+    [Fact]
+    public async Task Enrollment_fields_come_from_the_Phoenix_enrollment()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, false, ("Ana", "Alvarez"));
+        await TestSupport.Enrollments(db).EnrollAsync(new NewEnrollment(
+            ids[0], TestSupport.Campus, 2027, new DateOnly(2026, 10, 5),
+            GradeLevel.Grade11, EnrollmentKind.Preregistered, 0.5m, IsPrimary: false));
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client);
+
+        await svc.SyncAllAsync(Target, apply: true);
+
+        var enrollment = Assert.IsType<EdFiEnrollmentWrite>(
+            client.Calls.Single(c => c.Resource == "studentSchoolAssociations").Payload);
+        Assert.Equal(new DateOnly(2026, 10, 5), enrollment.EntryDate);
+        Assert.Equal("uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade", enrollment.EntryGradeLevelDescriptor);
+        Assert.Equal("uri://ed-fi.org/EnrollmentTypeDescriptor#Preregistered", enrollment.EnrollmentTypeDescriptor);
+        Assert.Equal(0.5, enrollment.FullTimeEquivalency);
+        Assert.False(enrollment.PrimarySchool);
+        Assert.Null(enrollment.ExitWithdrawDate);
+        Assert.Null(enrollment.ExitWithdrawTypeDescriptor);
+    }
+
+    [Fact]
+    public async Task Exit_is_sent_with_its_date_and_descriptor()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, false, ("Ana", "Alvarez"));
+        var enrolled = await EnrollAsync(db, ids[0]);
+        await TestSupport.Enrollments(db).ExitAsync(enrolled.Id, new DateOnly(2026, 11, 20), ExitReason.TransferredOut);
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Equal(StudentSyncOutcome.Created, Assert.Single(result.Rows).Outcome);
+        var enrollment = Assert.IsType<EdFiEnrollmentWrite>(
+            client.Calls.Single(c => c.Resource == "studentSchoolAssociations").Payload);
+        Assert.Equal(EntryDate, enrollment.EntryDate);
+        Assert.Equal(new DateOnly(2026, 11, 20), enrollment.ExitWithdrawDate);
+        Assert.Equal("uri://ed-fi.org/ExitWithdrawTypeDescriptor#Transferred", enrollment.ExitWithdrawTypeDescriptor);
+    }
+
+    [Fact]
+    public async Task Reentry_sends_one_association_per_enrollment_in_entry_order()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, false, ("Ana", "Alvarez"));
+        var first = await EnrollAsync(db, ids[0]);
+        await TestSupport.Enrollments(db).ExitAsync(first.Id, new DateOnly(2026, 10, 1), ExitReason.Withdrew);
+        await EnrollAsync(db, ids[0], entryDate: new DateOnly(2026, 11, 2));
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client);
+
+        await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Equal(
+            new[] { "students", "studentSchoolAssociations", "studentSchoolAssociations", "studentEducationOrganizationAssociations", "studentIdentificationCodes" },
+            client.Calls.Select(c => c.Resource));
+        var sent = client.Calls
+            .Where(c => c.Resource == "studentSchoolAssociations")
+            .Select(c => (EdFiEnrollmentWrite)c.Payload)
+            .ToList();
+        Assert.Equal(EntryDate, sent[0].EntryDate);
+        Assert.Equal(new DateOnly(2026, 10, 1), sent[0].ExitWithdrawDate);
+        Assert.Equal(new DateOnly(2026, 11, 2), sent[1].EntryDate);
+        Assert.Null(sent[1].ExitWithdrawDate);
+    }
+
+    [Fact]
+    public async Task Unmapped_grade_level_is_skipped_with_the_config_key()
+    {
+        await using var db = NewDb();
+        await SeedAsync(db, ("Ana", "Alvarez"));
+        var options = new EdFiApiOptions();
+        options.GradeLevelDescriptors.Remove("AdultEducation");
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client, options: options);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        var row = Assert.Single(result.Rows);
+        Assert.Equal(StudentSyncOutcome.Skipped, row.Outcome);
+        Assert.Contains("EdFiApi:GradeLevelDescriptors", row.Reason);
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task Preview_and_apply_are_audited_per_student_listed_without_names()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, false, ("Ana", "Alvarez"), ("Ben", "Brooks"));
+        await EnrollAsync(db, ids[0]);
+        var svc = NewService(db, new FakeEdFiClient());
+
+        await svc.SyncAllAsync(Target, apply: false);
+
+        var previews = await db.AuditEvents.Where(e => e.Action == AuditAction.SyncPreview).ToListAsync();
+        Assert.Equal(ids.OrderBy(i => i), previews.Select(e => e.StudentId!.Value).OrderBy(i => i));
+        Assert.False(await db.AuditEvents.AnyAsync(e => e.Action == AuditAction.SyncApply));
+
+        await svc.SyncAllAsync(Target, apply: true);
+
+        var applies = await db.AuditEvents.Where(e => e.Action == AuditAction.SyncApply).ToListAsync();
+        Assert.Equal(2, applies.Count);
+        Assert.Contains("sent to Ed-Fi", applies.Single(e => e.StudentId == ids[0]).Summary);
+        Assert.Contains("not sent", applies.Single(e => e.StudentId == ids[1]).Summary);
+
+        Assert.All(previews.Concat(applies), e =>
+        {
+            Assert.Equal(TestSupport.TestActor.Id, e.ActorId);
+            Assert.Equal("Student", e.EntityType);
+            Assert.DoesNotContain("Alvarez", e.Summary);
+            Assert.DoesNotContain("Brooks", e.Summary);
+            Assert.DoesNotContain("Ana", e.Summary);
+            Assert.DoesNotContain("Ben", e.Summary);
+        });
+    }
+
+    [Fact]
+    public async Task Audit_failure_stops_the_sync_before_anything_is_sent()
+    {
+        await using var db = NewDb();
+        await SeedAsync(db, ("Ana", "Alvarez"));
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client, user: new FailingCurrentUser());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.SyncAllAsync(Target, apply: true));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.SyncAllAsync(Target, apply: false));
+
+        Assert.Empty(client.Calls);
+        Assert.False(await db.StudentIdentifiers.AnyAsync(i => i.SourceSystem == "Ed-Fi"));
+        Assert.False(await db.AuditEvents.AnyAsync(e =>
+            e.Action == AuditAction.SyncApply || e.Action == AuditAction.SyncPreview));
+    }
+
+    [Fact]
     public async Task New_ids_continue_after_the_highest_mapped_number()
     {
         await using var db = NewDb();
@@ -239,16 +402,34 @@ public class StudentSyncServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static StudentSyncService NewService(PhoenixDbContext db, FakeEdFiClient client, bool enabled = true) =>
+    private static StudentSyncService NewService(
+        PhoenixDbContext db,
+        FakeEdFiClient client,
+        bool enabled = true,
+        EdFiApiOptions? options = null,
+        ICurrentUser? user = null) =>
         new(
             db,
             TestSupport.Identity(db),
             client,
-            Options.Create(new EdFiApiOptions()),
+            Options.Create(options ?? new EdFiApiOptions()),
             new StubFeatureFlags(enabled),
+            TestSupport.Audit(db, user),
             NullLogger<StudentSyncService>.Instance);
 
-    private static async Task<List<Guid>> SeedAsync(PhoenixDbContext db, params (string First, string Last)[] names)
+    /// <summary>Seeds students, each enrolled at the target campus for SY 2027 (entry 2026-08-17).</summary>
+    private static Task<List<Guid>> SeedAsync(PhoenixDbContext db, params (string First, string Last)[] names) =>
+        SeedAsync(db, true, names);
+
+    private static Task<EnrollmentRecord> EnrollAsync(
+        PhoenixDbContext db,
+        Guid studentId,
+        string campus = TestSupport.Campus,
+        DateOnly? entryDate = null) =>
+        TestSupport.Enrollments(db).EnrollAsync(new NewEnrollment(
+            studentId, campus, 2027, entryDate ?? EntryDate, GradeLevel.AdultEducation));
+
+    private static async Task<List<Guid>> SeedAsync(PhoenixDbContext db, bool enroll, params (string First, string Last)[] names)
     {
         var identity = TestSupport.Identity(db);
         var ids = new List<Guid>();
@@ -261,6 +442,9 @@ public class StudentSyncServiceTests
                 $"S-{n}",
                 new StudentDetails(first, null, last, new DateOnly(1995, 1, n)));
             ids.Add(record.Id);
+
+            if (enroll)
+                await EnrollAsync(db, record.Id);
         }
 
         return ids;

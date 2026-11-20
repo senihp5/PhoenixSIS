@@ -86,10 +86,24 @@ The sandbox key/secret are produced by `_tools\New-EdfiSandbox.ps1` into
 ### Student sync (PHX-7.2) — `IStudentSyncService`
 
 `SyncAllAsync(EdFiSyncTarget target, bool apply)` pushes every canonical Phoenix student.
-`GetDefaultTarget()` builds the target from config. Per student, in order: Student →
-StudentSchoolAssociation (campus, entry date, school year, calendar, primarySchool,
-enrollment type, FTE) → StudentEducationOrganizationAssociation (LEA) →
-StudentIdentificationCode (Local = the PHX number).
+`GetDefaultTarget()` builds the target (LEA, campus, school year, calendar) from config.
+Per student, in order: Student → one StudentSchoolAssociation per Phoenix enrollment at
+the target campus for the target school year → StudentEducationOrganizationAssociation
+(LEA) → StudentIdentificationCode (Local = the PHX number).
+
+**Enrollments come from Phoenix (PHX-8.4).** Entry date, exit date, grade level, kind, FTE
+and primary are read from the `Enrollment` table; the target no longer carries an entry
+date. Phoenix codes are mapped to Ed-Fi descriptors at this boundary
+(`EdFiApi:GradeLevelDescriptors`, `EnrollmentTypeDescriptors`,
+`ExitWithdrawTypeDescriptors`; table in `docs\edfi\texas-sample.md`). An exited
+enrollment is re-sent with `exitWithdrawDate` + `exitWithdrawTypeDescriptor`; an exit and
+re-entry in the same year sends two associations in entry order. A student with no
+matching enrollment is Skipped and gets no PHX number.
+
+**Audited (ADR-004).** Preview records one `SyncPreview` event and Run one `SyncApply`
+event per student listed (skipped students included), saved before anything is shown or
+sent. If the audit write fails the sync throws and nothing reaches Ed-Fi. Summaries carry
+campus and school year only.
 
 **Order is forced by Ed-Fi authorization.** The enrollment must come straight after the
 student: relationship-based authorization only lets the client write the LEA association and
@@ -107,9 +121,9 @@ test fake mimics both rules so the unit tests catch an order regression.
 
 | Outcome | Meaning |
 |---|---|
-| WouldCreate / WouldUpdate | Dry run — nothing written to Ed-Fi or Phoenix |
+| WouldCreate / WouldUpdate | Dry run — nothing sent to Ed-Fi, no student data changed (audit rows only) |
 | Created / Updated | Applied; the student POST returned 201 / 200 and all four writes succeeded |
-| Skipped | Not sent — no birth date in Phoenix (Ed-Fi requires one) |
+| Skipped | Not sent — no enrollment at the campus for the year, no birth date, or an unmapped grade / kind / exit reason. `Reason` says which |
 | Failed | One write failed: `FailedResource` + Ed-Fi `Problem`, or `Reason` for a non-API error. Never stops the batch |
 
 - **Ed-Fi ID:** `studentUniqueId` = `PHX-NNNNNN`, stored as a Phoenix identifier (source
@@ -122,9 +136,10 @@ test fake mimics both rules so the unit tests catch an order regression.
   PHX-7.3 page can choose campus, year and calendar.
 - **Config (`EdFiApi`, non-secret, defaults in `EdFiApiOptions` match the seeded sample ODS):**
   `DefaultLeaId` 220822, `DefaultSchoolId` 220822001, `SchoolYear` 2027, `CalendarCode`
-  220822001-2027, `DefaultEntryDate` 2026-08-17, `DefaultEntryGradeLevelDescriptor` Adult
-  Education, `DefaultEnrollmentTypeDescriptor` Current, `DefaultFullTimeEquivalency` 1.0,
-  `LocalIdentificationSystemDescriptor` Local.
+  220822001-2027, `LocalIdentificationSystemDescriptor` Local, plus the three descriptor
+  maps above. The Sprint 7 `DefaultEntryDate`, `DefaultEntryGradeLevelDescriptor`,
+  `DefaultEnrollmentTypeDescriptor` and `DefaultFullTimeEquivalency` keys were removed in
+  PHX-8.4 (never set in any appsettings file).
 
 Registered as a **singleton** so the token cache persists; pulls a fresh
 `HttpClient` from `IHttpClientFactory` per call. Every method is guarded by
