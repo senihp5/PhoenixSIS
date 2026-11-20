@@ -112,3 +112,5 @@ As the team, I want the real sync proven against the DS 6.1 sandbox and document
 **Correction found in the first live run (2026-11-20):** the PHX-7.2 write order above (LEA association before enrollment) is wrong for the Ed-Fi Sandbox claim set. All 13 students got 403 on `studentEducationOrganizationAssociations`; the API hint said to create the `StudentSchoolAssociation` first. Correct order: Student -> StudentSchoolAssociation -> StudentEducationOrganizationAssociation -> StudentIdentificationCode.
 
 **Second correction (run #2, same day):** updating an EXISTING student is also 403 until the student is enrolled (creating a new one is not). Run #1 left 13 students created but unenrolled, so run #2 failed on the student POST. The sync now enrolls first when the student POST is 403, then re-writes the student.
+
+**Sprint 7 CLOSED 2026-11-20** - live sync verified on DS 6.1 (13 students, every resource checked by GET, ODS +13 exactly, idempotent re-run, forced 409 shown with detail and healed). Retro: `docs\retros\sprint-07.md`. Tag `phoenix-sprint-07`.

@@ -168,6 +168,7 @@ through this module until New Heights' written data-sharing authorization is sig
 - [x] Flag in `Features` (default OFF in base)
 - [x] `EdFiModule : IModule`; one line in `ModuleBootstrapper.Modules`
 - [x] Services flag-guarded at entry points; pages guarded in markup; nav conditional
-- [x] No module-owned DB tables yet (read-only integration this sprint)
+- [x] No module-owned DB tables (the Ed-Fi id is a `StudentIdentifier` row, ADR-002)
+- [x] Live sync verified 2026-11-20 on ODS/API 7.3 / DS 6.1 (Sprint 7 retro)
 - [x] This doc
 - [x] Architecture tests green
