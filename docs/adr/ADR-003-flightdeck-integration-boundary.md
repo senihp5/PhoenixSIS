@@ -53,6 +53,11 @@ clean-room that map is a **boundary between two products**, not a merge.
      TEA's**.
    - **(c) TEA source-system vendor approval** - required only to *submit (push) to
      TSDS*, not to hold NH data in Phoenix.
+     **Update 2026-11-13:** TEA confirmed there is no vendor registration or approval.
+     Gate (c) becomes: New Heights, as the LEA, issues IODS Key/Secret credentials to
+     Phoenix in the TSDS Data Management Center and runs its own parallel testing
+     before the first live submission. It is therefore NH's decision - fold it into
+     gate (b)'s written authorization, given Patrick's dual role.
 
 5. **Cross-tenant identity is real work.** Phoenix (phoenixsis.onmicrosoft.com) and
    Flightdeck (New Heights tenant) are separate Entra tenants; SSO and unified

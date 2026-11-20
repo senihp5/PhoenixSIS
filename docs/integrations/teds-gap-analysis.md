@@ -49,7 +49,16 @@ A source system must obtain **Key/Secret credentials per LEA ODS**, conform to t
 and Level 3 business validations**, tracked on TEA's **Vendor Data Completeness
 Scorecard**.
 
-### 5. The open blocker (only TEA can answer)
+### 5. The open blocker - RESOLVED 2026-11-13
+**Answer (TSDS Deployment, 2026-11-13):** there is no source-system vendor registration
+at all. The LEA creates Key/Secret credentials for its IODS in the TSDS Data Management
+Center and gives them to the vendor; TEA imposes no pre-submission requirements and
+encourages (does not require) Ed-Fi certification v4+. **And the version is now known:**
+the TSDS Vendor SDK 2027.2.0 declares Ed-Fi **Data Standard 4.0.0** + TX extension
+2027.2.0 (see `texas-tsds-requirements.md` section 4b). The original text below is kept
+for history.
+
+_Original (2026-11-06):_
 No public TEA guidance states whether an **LEA-developed, in-house SIS** can register as
 its own source-system vendor to obtain API credentials — every documented path is
 commercial-vendor-centric. This is the one hard blocker to Phoenix ever submitting, and

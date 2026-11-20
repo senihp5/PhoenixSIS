@@ -90,6 +90,92 @@ Two things do not change:
 
 The TEA email (`tea-vendor-inquiry-email.md`) is rewritten to this third-party framing.
 
+## 4b. TEA's answers and the TSDS Ed-Fi version (2026-11-13)
+
+TSDS Deployment (TSDSDeployment@tea.texas.gov) answered the third-party-vendor inquiry:
+
+- **No registration process.** "TEA does not have a formal registration process for SIS
+  vendors to become source-system vendors for TSDS state reporting." TEA *encourages*
+  Ed-Fi certification "(version 4 or higher)" - encouraged, not required.
+- **Dev/test:** the public **TSDS Vendor SDK** (texasstudentdatasystem.org, Resources).
+  For advanced testing TEA offers a **vendor sandbox**; Ed-Fi certification is not
+  required to use it, but access is coordinated with TSDS staff.
+- **Credentials come from the LEA, not TEA.** "The LEA creates and manages Key/Secret
+  credentials through the TSDS Data Management Center (DMC)" and gives them to each
+  source vendor for the LEA's individual ODS (IODS). The DMC lets the LEA set
+  Read/Write/Update/Delete access per vendor application.
+- **No pre-submission gate.** "TEA does not impose formal requirements before a new
+  source system is used for its first live PEIMS submission." The LEA is accountable
+  and runs its own local parallel testing. The Vendor Data Completeness Scorecard has
+  been retired.
+- **Docs:** no dedicated new-vendor onboarding document; TSDS Homepage, TEDS XML, TWEDS
+  Upgrade, and Resources pages.
+
+**The TSDS Ed-Fi version (verified from the SDK image, not stated in TEA's docs):**
+TSDS Vendor SDK 2027.2.0 (October 2026, built from the TEDS publication of 2026-07-01)
+is a Docker stack of TEA-built images (`ghcr.io/teaivvdeploy/tsdsodssdk/*:2027.2.0`:
+webapi, swagger, adminapp, db-tools; SQL Server 2019). The webapi image's
+`appsettings.json` declares **`"StandardVersion": "4.0.0"`** and
+**`"ExtensionVersion": "2027.2.0"`**, ships `EdFi.Ods.Extensions.TX.dll`, and the image
+env is `VERSION=5.3.1434` on .NET 8 (a TEA build). **Texas state reporting runs on Ed-Fi
+Data Standard 4.0 + the TX extension** - not the Data Standard 6.1 our self-hosted ODS
+runs. Ed-Fi lists DS 4.0 as out of support after SY 2025-26; TSDS has a multi-year
+upgrade initiative but publishes no target version.
+
+**Implications:** a Phoenix TSDS publisher must speak DS 4.0 + TX to the LEA's IODS. Under
+ADR-002 that is an outbound adapter at the boundary, not a change to Phoenix's schema.
+The dev/test target for Texas is the TSDS SDK (and later the TEA vendor sandbox), not
+the generic DS 6.1 ODS. The "open question" in section 4 is answered: no registration
+is needed; the LEA (New Heights) issues the IODS credentials and decides readiness.
+
+## 4c. SY 2027-28: TSDS moves to Ed-Fi DS 6.1 + ODS/API 7.3 (2026-11-20)
+
+Sources: TEA TSDS Vendor Webinar 2026-10-29 (slides from Ed-Fi's Nathan Gandomi) and
+Nathan's reply of 2026-11-20. **This supersedes the section 4b "implications" paragraph.**
+
+- **Platform:** "For the 2027-2028 school year, TSDS will be upgraded from Ed-Fi
+  ODS/API platform version 7.1 to version 7.3" (.NET 8 -> .NET 10). TEA reviewed TEDS
+  for "the planned transition to the Ed-Fi version 6.1." So the current TSDS (SDK
+  2027.x) is ODS/API 7.1 + DS 4.0 + TX; **SY 2027-28 is ODS/API 7.3 + DS 6.1 + TX** -
+  Phoenix's own stack.
+- **Dates:** preliminary TEDS **2028.0.0 published 2026-12-01**; **SDK 2028.0.0 target
+  Jan/Feb 2027** (requires .NET 10; TEA Ed-Fi Handbook published with it). Next vendor
+  webinars 2026-12-03, 2027-01-28, 2027-03-04. Plans for SY 2028-29 not announced.
+- **Unchanged:** all TX extension resources/entities/descriptors, API endpoints and URL
+  structure, OAuth 2.0 client credentials, security claim sets, interchange XSD.
+- **Changed for vendors:** error bodies become RFC 7807 Problem Details (`message`->
+  `detail`, `code`->`status`, plus `type`, `title`, `correlationId`, `errors[]`; HTTP
+  status codes unchanged); profile-restricted creates return an explicit 403.
+- **DS 6.1 shape changes TEA adopts (student side):** Parent/StudentParentAssociation
+  sunset -> **Contact / StudentContactAssociation** (ParentUniqueId -> ContactUniqueId);
+  new **StudentDemographic** (Sex, Race, HispanicLatinoEthnicity, EconomicDisadvantage,
+  EmergentBilingual, FosterCare, Homeless, Truancy, UnaccompaniedYouth,
+  UnschooledAsyleeRefugee, MilitaryConnected, DyslexiaRisk, Language,
+  StudentCharacteristic, **StudentCensusBlockGroupSet**, **AdultPreviousAttendanceSet**);
+  new **StudentDirectory** (Address, ElectronicMail, Telephone); new
+  **StudentIdentificationCode** (LocalStudentId/StudentId moved here;
+  StudentIdentificationSystem C379 = 01 SSN, 02 Local Student ID, 03 State/S-Number);
+  CrisisEventSet -> StudentEducationOrganizationAssociation; SchoolYear added to
+  StudentAssessment. Staff side: StaffDemographic, StaffIdentificationCode.
+- **Adult-HS relevance:** `AdultPreviousAttendanceSet` (E1660, C362) and the census
+  block group (State Compensatory Ed funding) both live on StudentDemographic.
+  StudentIdentificationCode maps one-to-one onto Phoenix's ADR-002 StudentIdentifier
+  rows (Local / State / SSN systems) - SSN must be treated as restricted data.
+- **Ed-Fi (Nathan Gandomi, 2026-11-20):** DS **v6 SIS certification targeted early
+  2027**; Ed-Fi will work with a DS v6 build - don't regress to 5.2. Certification
+  covers *core, unextended* Ed-Fi only; TSDS's TX extension is outside it - "build
+  toward those TSDS requirements and specifications first." **No partner or
+  certification fees** (Dell Foundation-funded). **An organization is required** (no
+  individual partners). New Heights could be the initial verification environment;
+  Ed-Fi works with new entrants on the path to the other two. Testing = vendor
+  preparation + Alliance review (mappings, transactional behavior, connection mgmt,
+  resync, error handling, descriptors, paging/change queries, admin troubleshooting).
+  Offered a readiness call.
+
+**Net implication:** Phoenix stays on DS 6.1 + ODS/API 7.3. The DS 4.0 adapter is
+unnecessary. The Texas dev target becomes SDK 2028.0.0 (Jan/Feb 2027); until then the
+self-hosted DS 6.1 ODS (nh-edfi-cus) is a faithful stand-in for core Ed-Fi shapes.
+
 ## 5. What this means for Phoenix sequencing
 
 - **No blocker today.** PowerSchool stays the TSDS submitter; Phoenix's
