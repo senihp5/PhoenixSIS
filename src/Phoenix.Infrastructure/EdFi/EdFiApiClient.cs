@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,6 +21,11 @@ public sealed class EdFiApiClient : IEdFiApiClient
     public const string HttpClientName = "EdFiApi";
     private const string FeatureFlag = "EdFi";
     private static readonly TimeSpan TokenRefreshSkew = TimeSpan.FromSeconds(60);
+
+    private static readonly JsonSerializerOptions WriteJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly EdFiApiOptions _options;
@@ -139,6 +145,144 @@ public sealed class EdFiApiClient : IEdFiApiClient
                 s.LastSurname ?? string.Empty,
                 s.BirthDate))
             .ToList();
+    }
+
+    public async Task<EdFiWriteResult> UpsertStudentAsync(
+        EdFiStudentWrite student,
+        CancellationToken cancellationToken = default)
+    {
+        _features.RequireEnabled(FeatureFlag);
+        var payload = EdFiWritePayloads.Student(student);
+        return await PostResourceAsync("students", payload, cancellationToken);
+    }
+
+    public async Task<EdFiWriteResult> UpsertStudentSchoolAssociationAsync(
+        EdFiEnrollmentWrite enrollment,
+        CancellationToken cancellationToken = default)
+    {
+        _features.RequireEnabled(FeatureFlag);
+        var payload = EdFiWritePayloads.Enrollment(enrollment);
+        return await PostResourceAsync("studentSchoolAssociations", payload, cancellationToken);
+    }
+
+    public async Task<EdFiWriteResult> UpsertStudentEducationOrganizationAssociationAsync(
+        EdFiStudentEdOrgWrite association,
+        CancellationToken cancellationToken = default)
+    {
+        _features.RequireEnabled(FeatureFlag);
+        var payload = EdFiWritePayloads.StudentEdOrg(association);
+        return await PostResourceAsync("studentEducationOrganizationAssociations", payload, cancellationToken);
+    }
+
+    public async Task<EdFiWriteResult> UpsertStudentIdentificationCodeAsync(
+        EdFiStudentIdentificationCodeWrite code,
+        CancellationToken cancellationToken = default)
+    {
+        _features.RequireEnabled(FeatureFlag);
+        var payload = EdFiWritePayloads.IdentificationCode(code);
+        return await PostResourceAsync("studentIdentificationCodes", payload, cancellationToken);
+    }
+
+    /// <summary>
+    /// POSTs one resource. 200/201 = success (Ed-Fi POST is upsert by natural
+    /// key). A 401 refreshes the bearer token once. A cold-start 404, a 5xx,
+    /// a timeout or a transport failure is retried up to WriteRetryCount
+    /// times; 400/403/409 and every other status return at once with the
+    /// parsed Problem Details. Logs carry the resource, status, problem type
+    /// and correlation id - never the request body.
+    /// </summary>
+    private async Task<EdFiWriteResult> PostResourceAsync(
+        string resource,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(payload, payload.GetType(), WriteJsonOptions);
+        var maxAttempts = 1 + Math.Max(0, _options.WriteRetryCount);
+        var tokenRefreshed = false;
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+            var token = await GetAccessTokenAsync(cancellationToken);
+            var client = CreateClient();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"data/v3/ed-fi/{resource}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await client.SendAsync(request, cancellationToken);
+            }
+            catch (Exception ex) when (IsTransientTransportFailure(ex, cancellationToken) && attempt < maxAttempts)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Ed-Fi POST {Resource} transport failure (attempt {Attempt}/{MaxAttempts}); retrying.",
+                    resource, attempt, maxAttempts);
+                await DelayBeforeRetryAsync(cancellationToken);
+                continue;
+            }
+
+            using (response)
+            {
+                var status = (int)response.StatusCode;
+                if (status is 200 or 201)
+                {
+                    _logger.LogDebug(
+                        "Ed-Fi POST {Resource} -> {Status} (attempt {Attempt}).",
+                        resource, status, attempt);
+                    return new EdFiWriteResult(resource, true, status, attempt, null);
+                }
+
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (status == 401 && !tokenRefreshed)
+                {
+                    _logger.LogWarning(
+                        "Ed-Fi POST {Resource} -> 401; refreshing the access token once.",
+                        resource);
+                    InvalidateCachedToken();
+                    tokenRefreshed = true;
+                    continue;
+                }
+
+                if (IsTransientStatus(status) && attempt < maxAttempts)
+                {
+                    _logger.LogWarning(
+                        "Ed-Fi POST {Resource} -> {Status} (attempt {Attempt}/{MaxAttempts}); retrying.",
+                        resource, status, attempt, maxAttempts);
+                    await DelayBeforeRetryAsync(cancellationToken);
+                    continue;
+                }
+
+                var problem = EdFiProblemParser.Parse(status, body);
+                _logger.LogWarning(
+                    "Ed-Fi POST {Resource} failed: {Status} {ProblemType} (correlationId {CorrelationId}, attempts {Attempts}).",
+                    resource, status, problem.Type ?? "(none)", problem.CorrelationId ?? "(none)", attempt);
+
+                return new EdFiWriteResult(resource, false, status, attempt, problem);
+            }
+        }
+    }
+
+    private static bool IsTransientStatus(int status) => status == 404 || status >= 500;
+
+    private static bool IsTransientTransportFailure(Exception ex, CancellationToken cancellationToken) =>
+        ex is HttpRequestException
+        || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested);
+
+    private Task DelayBeforeRetryAsync(CancellationToken cancellationToken) =>
+        _options.WriteRetryDelayMs > 0
+            ? Task.Delay(_options.WriteRetryDelayMs, cancellationToken)
+            : Task.CompletedTask;
+
+    private void InvalidateCachedToken()
+    {
+        _cachedToken = null;
+        _tokenExpiresAt = DateTimeOffset.MinValue;
     }
 
     private bool TryGetCachedToken(out string token)

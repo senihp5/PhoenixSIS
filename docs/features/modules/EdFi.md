@@ -14,8 +14,11 @@ sprint.
 ## Shape (follows MODULE_TEMPLATE, Phase 1 — folders)
 
 ```
-src\Phoenix.Core\Modules\EdFi\        contracts: IEdFiApiClient, EdFiApiInfo, EdFiStudentSummary
-src\Phoenix.Infrastructure\EdFi\      EdFiModule, EdFiApiOptions, EdFiApiClient
+src\Phoenix.Core\Modules\EdFi\        contracts: IEdFiApiClient, EdFiApiInfo, EdFiStudentSummary,
+                                     EdFiStudentWrite, EdFiEnrollmentWrite, EdFiStudentEdOrgWrite,
+                                     EdFiStudentIdentificationCodeWrite, EdFiWriteResult, EdFiProblem
+src\Phoenix.Infrastructure\EdFi\      EdFiModule, EdFiApiOptions, EdFiApiClient,
+                                     EdFiWritePayloads (internal), EdFiProblemParser (internal)
 src\Phoenix.Web\Components\Pages\EdFi\ Health.razor, Students.razor
 ```
 
@@ -54,6 +57,30 @@ The sandbox key/secret are produced by `_tools\New-EdfiSandbox.ps1` into
   until ~60s before expiry (thread-safe). Proves authentication.
 - `GetStudentsAsync(limit)` — bearer-authenticated read of `/data/v3/ed-fi/students`.
 
+### Write path (PHX-7.1, DS 6.1)
+
+| Method | Resource (POST = upsert by natural key) | Natural key |
+|---|---|---|
+| `UpsertStudentAsync` | `students` | studentUniqueId |
+| `UpsertStudentSchoolAssociationAsync` | `studentSchoolAssociations` | student, school, entryDate |
+| `UpsertStudentEducationOrganizationAssociationAsync` | `studentEducationOrganizationAssociations` | student, education organization |
+| `UpsertStudentIdentificationCodeAsync` | `studentIdentificationCodes` | student, education organization, identification system |
+
+- Returns `EdFiWriteResult` (resource, success, status, attempts, `EdFiProblem?`); API
+  errors never throw. 201 = created, 200 = updated.
+- `EdFiProblem` = RFC 7807 Problem Details as ODS/API 7.3 sends it (`application/json`):
+  `type`, `title`, `status`, `detail`, `correlationId`, `errors[]` (401/403) and
+  `validationErrors` keyed by JSON path (400, e.g. `$.firstName`). A 409 unresolved
+  reference is `urn:ed-fi:api:data-conflict:unresolved-reference`. A non-JSON body (the
+  cold-start page) becomes a problem with the status and a length note, never the HTML.
+- Retries: cold-start 404, 5xx, timeouts and transport failures, up to
+  `EdFiApi:WriteRetryCount` (default 3) with `EdFiApi:WriteRetryDelayMs` (default 2000).
+  400/403/409 are never retried. A 401 refreshes the cached token once.
+- **SSN guard:** `UpsertStudentIdentificationCodeAsync` throws before any network call for
+  the `#SSN` identification system. Phoenix never sends Social Security numbers.
+- Logs carry resource, status, problem type and correlation id only — never the body.
+- Write order matters: student first, then the associations (a missing student is a 409).
+
 Registered as a **singleton** so the token cache persists; pulls a fresh
 `HttpClient` from `IHttpClientFactory` per call. Every method is guarded by
 `IFeatureFlagService.RequireEnabled("EdFi")`.
@@ -72,14 +99,18 @@ appear only for admins **and** only when the flag is on.
 
 With the `Ed-Fi Sandbox` claim set, a student is only visible once a
 `studentSchoolAssociation` links them to a school under the API client's
-education organization (LEA 255901). This is why a freshly created student is
+education organization. This is why a freshly created student is
 unreadable until associated — see the PHX-3.5 lesson in `docs\edfi\local-setup.md`.
+Since PHX-7.0 the sandbox client covers both the Ed-Fi sample LEA 255901 and New Heights
+LEA 220822 (`_tools\Add-EdfiClientEdOrg.ps1`); writes for school 220822001 return 403
+without the latter.
 
 ## Guardrail
 
-`nh-edfi-cus` is reachable on the public internet behind OAuth only until the
-on-site IP lockdown (hardening list). **Use sample data only** — no real student
-data through this module until the lockdown is in place.
+`nh-edfi-cus` has been private-endpoint only since 2026-11-20 (hardening #1); the
+workstation reaches it over the VPN. **Use sample data only** — no real student data
+through this module until New Heights' written data-sharing authorization is signed
+(ADR-003 gate b; draft parked 2026-11-20).
 
 ## MODULE_TEMPLATE checklist
 
