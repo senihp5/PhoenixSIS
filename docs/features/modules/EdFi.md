@@ -80,7 +80,8 @@ The sandbox key/secret are produced by `_tools\New-EdfiSandbox.ps1` into
   the `#SSN` identification system. Phoenix never sends Social Security numbers.
 - Logs carry resource, status, problem type and correlation id only — never the body.
 - Write order matters: student first (a missing student is a 409), then the enrollment, then
-  the other student records (403 until the enrollment exists).
+  the other student records (403 until the enrollment exists). Updating an existing student
+  is also 403 until they are enrolled.
 
 ### Student sync (PHX-7.2) — `IStudentSyncService`
 
@@ -96,6 +97,13 @@ the identification code for a student already enrolled in one of its schools. Th
 run (PHX-7.4) used the card's order (LEA association before enrollment) and every student got
 `403 Authorization Denied` on studentEducationOrganizationAssociations with the hint "You may
 need to create a corresponding 'StudentSchoolAssociation' item".
+
+**Second rule (run #2):** Ed-Fi lets the client *create* a new student freely, but only lets
+it *update* an existing student who is enrolled in one of its schools. Run #1 had left 13
+students created but never enrolled, so run #2 got 403 on the student POST itself. The sync
+now recovers: on a 403 for the student it writes the enrollment first (allowed for an
+existing student), then writes the student again, then the LEA association and code. The
+test fake mimics both rules so the unit tests catch an order regression.
 
 | Outcome | Meaning |
 |---|---|

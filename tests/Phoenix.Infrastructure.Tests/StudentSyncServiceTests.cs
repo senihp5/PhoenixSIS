@@ -143,6 +143,25 @@ public class StudentSyncServiceTests
     }
 
     [Fact]
+    public async Task Existing_unenrolled_student_is_enrolled_first_then_updated()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Fatima", "Al-Rashid"));
+        await new StudentIdentityService(db).AddIdentifierAsync(ids[0], "Ed-Fi", "PHX-000001");
+        var client = new FakeEdFiClient();
+        client.AddExistingUnenrolledStudent("PHX-000001"); // left behind by an earlier failed run
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        var row = Assert.Single(result.Rows);
+        Assert.Equal(StudentSyncOutcome.Updated, row.Outcome);
+        Assert.Equal(
+            new[] { "students", "studentSchoolAssociations", "students", "studentEducationOrganizationAssociations", "studentIdentificationCodes" },
+            client.Calls.Select(c => c.Resource));
+    }
+
+    [Fact]
     public async Task Client_exception_is_captured_per_student()
     {
         await using var db = NewDb();
@@ -261,12 +280,27 @@ public class StudentSyncServiceTests
     private sealed record Call(string Resource, string UniqueId, object Payload);
 
     /// <summary>
-    /// Records every write. A student POST returns 201 the first time a
-    /// studentUniqueId is seen and 200 after that, like Ed-Fi's upsert.
+    /// Records every write and mimics the Ed-Fi Sandbox claim set seen live:
+    /// a student POST returns 201 for a new studentUniqueId, 200 for an
+    /// existing student who is enrolled, and 403 for an existing student who
+    /// is not enrolled in one of the client's schools. A successful
+    /// enrollment POST enrolls the student.
     /// </summary>
     private sealed class FakeEdFiClient : IEdFiApiClient
     {
+        private static readonly EdFiProblem NotEnrolled = new(
+            "urn:ed-fi:api:security:authorization",
+            "Authorization Denied",
+            403,
+            "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+            null,
+            [],
+            new Dictionary<string, IReadOnlyList<string>>());
+
         private readonly HashSet<string> _knownStudents = [];
+        private readonly HashSet<string> _enrolledStudents = [];
+
+        public void AddExistingUnenrolledStudent(string uniqueId) => _knownStudents.Add(uniqueId);
 
         public List<Call> Calls { get; } = [];
         public Func<string, string, EdFiProblem?>? FailWhen { get; set; }
@@ -283,12 +317,21 @@ public class StudentSyncServiceTests
 
         public Task<EdFiWriteResult> UpsertStudentAsync(EdFiStudentWrite student, CancellationToken cancellationToken = default)
         {
-            var created = _knownStudents.Add(student.StudentUniqueId);
-            return Record("students", student.StudentUniqueId, student, created ? 201 : 200);
+            var id = student.StudentUniqueId;
+            if (_knownStudents.Contains(id) && !_enrolledStudents.Contains(id))
+                return Record("students", id, student, 200, NotEnrolled);
+
+            var created = _knownStudents.Add(id);
+            return Record("students", id, student, created ? 201 : 200);
         }
 
-        public Task<EdFiWriteResult> UpsertStudentSchoolAssociationAsync(EdFiEnrollmentWrite enrollment, CancellationToken cancellationToken = default) =>
-            Record("studentSchoolAssociations", enrollment.StudentUniqueId, enrollment, 201);
+        public async Task<EdFiWriteResult> UpsertStudentSchoolAssociationAsync(EdFiEnrollmentWrite enrollment, CancellationToken cancellationToken = default)
+        {
+            var result = await Record("studentSchoolAssociations", enrollment.StudentUniqueId, enrollment, 201);
+            if (result.Success)
+                _enrolledStudents.Add(enrollment.StudentUniqueId);
+            return result;
+        }
 
         public Task<EdFiWriteResult> UpsertStudentEducationOrganizationAssociationAsync(EdFiStudentEdOrgWrite association, CancellationToken cancellationToken = default) =>
             Record("studentEducationOrganizationAssociations", association.StudentUniqueId, association, 201);
@@ -296,14 +339,15 @@ public class StudentSyncServiceTests
         public Task<EdFiWriteResult> UpsertStudentIdentificationCodeAsync(EdFiStudentIdentificationCodeWrite code, CancellationToken cancellationToken = default) =>
             Record("studentIdentificationCodes", code.StudentUniqueId, code, 201);
 
-        private Task<EdFiWriteResult> Record(string resource, string uniqueId, object payload, int successStatus)
+        private Task<EdFiWriteResult> Record(
+            string resource, string uniqueId, object payload, int successStatus, EdFiProblem? forced = null)
         {
             if (ThrowWhen?.Invoke(uniqueId) is { } ex)
                 throw ex;
 
             Calls.Add(new Call(resource, uniqueId, payload));
 
-            if (FailWhen?.Invoke(resource, uniqueId) is { } problem)
+            if ((forced ?? FailWhen?.Invoke(resource, uniqueId)) is { } problem)
                 return Task.FromResult(new EdFiWriteResult(resource, false, problem.Status ?? 409, 1, problem));
 
             return Task.FromResult(new EdFiWriteResult(resource, true, successStatus, 1, null));
