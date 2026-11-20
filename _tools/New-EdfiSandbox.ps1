@@ -14,7 +14,10 @@
       4. Smoke test: OAuth token + GET /data/v3/ed-fi/students
 
     Run from the workstation over the Azure VPN. SQL creds come from
-    C:\temp\edfi-sql.ps1 (written by New-EdfiLogin.ps1).
+    C:\temp\edfi-sql.ps1 (written by New-EdfiLogin.ps1). The RESTORE runs as a
+    SQL sysadmin (prompted, or -AdminCredential) because edfi_app is db_owner
+    only after hardening #3; the restored database is then re-owned by sa and
+    edfi_app is mapped in it as db_owner (Get-EdfiDbUserGrantSql).
 
     Examples:
       .\New-EdfiSandbox.ps1
@@ -35,6 +38,7 @@ param(
     [string]$ApiBase = 'https://nh-edfi-cus.azurewebsites.net',
     [string]$OdsServerForApi = '10.10.2.4',
     [string]$BackupDir,
+    [pscredential]$AdminCredential,
     [string]$CredentialScript = 'C:\temp\edfi-sql.ps1',
     [string]$SecretsOut = 'C:\temp\edfi-sandbox.ps1'
 )
@@ -45,6 +49,9 @@ $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $CredentialScript)) { throw "Credential file not found: $CredentialScript" }
 . $CredentialScript
 if (-not $Global:EdfiSrv -or -not $Global:EdfiUsr -or -not $Global:EdfiPwd) { throw "$CredentialScript did not set EdfiSrv/EdfiUsr/EdfiPwd." }
+. (Join-Path $PSScriptRoot 'EdfiSql.Common.ps1')
+if (-not $AdminCredential) { $AdminCredential = Get-Credential -Message "SQL sysadmin on $($Global:EdfiSrv) - RESTORE needs it (edfi_app is db_owner only)" }
+$adminPassword = $AdminCredential.GetNetworkCredential().Password
 
 $dbName = "EdFi_Ods_Sandbox_$SandboxName"
 $charset = [char[]]'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
@@ -56,7 +63,7 @@ function New-RandomString([int]$len) {
 $key = New-RandomString 16
 $secret = New-RandomString 32
 
-$master = New-Object System.Data.SqlClient.SqlConnection "Server=$($Global:EdfiSrv);Initial Catalog=master;User ID=$($Global:EdfiUsr);Password=$($Global:EdfiPwd);TrustServerCertificate=True;Encrypt=True"
+$master = New-Object System.Data.SqlClient.SqlConnection "Server=$($Global:EdfiSrv);Initial Catalog=master;User ID=$($AdminCredential.UserName);Password=$adminPassword;TrustServerCertificate=True;Encrypt=True"
 $master.Open()
 try {
     $cmd = $master.CreateCommand(); $cmd.CommandTimeout = 3600
@@ -87,6 +94,9 @@ try {
     $cmd.CommandText = "ALTER DATABASE [$dbName] SET RECOVERY SIMPLE"
     [void]$cmd.ExecuteNonQuery()
     Write-Host "$dbName restored (SIMPLE recovery)." -ForegroundColor Green
+    $cmd.CommandText = Get-EdfiDbUserGrantSql -Database $dbName -LoginName $Global:EdfiUsr
+    [void]$cmd.ExecuteNonQuery()
+    Write-Host "$dbName owner=sa; $($Global:EdfiUsr) mapped as db_owner." -ForegroundColor Green
 }
 finally { $master.Close() }
 

@@ -15,7 +15,9 @@
          smoke test), unless -NoProvision is given
 
     Run from the workstation over the Azure VPN. SQL creds from
-    C:\temp\edfi-sql.ps1. This is destructive to the sandbox ONLY; it never
+    C:\temp\edfi-sql.ps1. The DROP (and the re-provision RESTORE) run as a SQL
+    sysadmin - prompted once, or -AdminCredential - because edfi_app is
+    db_owner only after hardening #3. This is destructive to the sandbox ONLY; it never
     touches EdFi_Admin rows for other vendors/instances, the template DBs,
     or anything outside the sandbox. Sample data only.
 
@@ -29,6 +31,7 @@ param(
     [string]$SandboxName = 'Phoenix',
     [string]$VendorName = 'Phoenix SIS',
     [switch]$NoProvision,
+    [pscredential]$AdminCredential,
     [string]$CredentialScript = 'C:\temp\edfi-sql.ps1',
     [string]$ProvisionScript = (Join-Path $PSScriptRoot 'New-EdfiSandbox.ps1')
 )
@@ -38,6 +41,8 @@ $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $CredentialScript)) { throw "Credential file not found: $CredentialScript" }
 . $CredentialScript
 if (-not $Global:EdfiSrv -or -not $Global:EdfiUsr -or -not $Global:EdfiPwd) { throw "$CredentialScript did not set EdfiSrv/EdfiUsr/EdfiPwd." }
+if (-not $AdminCredential) { $AdminCredential = Get-Credential -Message "SQL sysadmin on $($Global:EdfiSrv) - DROP/RESTORE need it (edfi_app is db_owner only)" }
+$adminPassword = $AdminCredential.GetNetworkCredential().Password
 
 $dbName = "EdFi_Ods_Sandbox_$SandboxName"
 
@@ -89,7 +94,7 @@ SELECT ISNULL(@vendorId, -1), ISNULL(@odsId, -1);
 catch { $tx.Rollback(); throw }
 finally { $admin.Close() }
 
-$master = New-Object System.Data.SqlClient.SqlConnection "Server=$($Global:EdfiSrv);Initial Catalog=master;User ID=$($Global:EdfiUsr);Password=$($Global:EdfiPwd);TrustServerCertificate=True;Encrypt=True"
+$master = New-Object System.Data.SqlClient.SqlConnection "Server=$($Global:EdfiSrv);Initial Catalog=master;User ID=$($AdminCredential.UserName);Password=$adminPassword;TrustServerCertificate=True;Encrypt=True"
 $master.Open()
 try {
     $cmd = $master.CreateCommand(); $cmd.CommandTimeout = 300
@@ -112,7 +117,7 @@ if ($NoProvision) {
 if (-not (Test-Path $ProvisionScript)) { throw "Provisioner not found: $ProvisionScript" }
 Write-Host ''
 Write-Host "Re-provisioning via $ProvisionScript ..." -ForegroundColor Cyan
-& $ProvisionScript -SandboxName $SandboxName -VendorName $VendorName
+& $ProvisionScript -SandboxName $SandboxName -VendorName $VendorName -AdminCredential $AdminCredential
 
 Write-Host ''
 Write-Host "Reset complete. Sandbox '$SandboxName' rebuilt from baseline." -ForegroundColor Green

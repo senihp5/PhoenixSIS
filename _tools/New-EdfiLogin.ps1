@@ -11,9 +11,12 @@
     file OUTSIDE the repo (default C:\temp\edfi-sql.ps1, same pattern as
     C:\temp\ci-sql.ps1).
 
-    Run from the workstation over the Azure VPN. Admin credentials default
-    to the ci-sql.ps1 values; pass -AdminCredential (Get-Credential) if
-    that login lacks securityadmin/sysadmin rights.
+    Run from the workstation over the Azure VPN. Admin credentials are
+    prompted (Get-Credential) - use a real sysadmin such as decisioned-admin.
+    Do NOT point -CredentialScript at C:\temp\ci-sql.ps1: that is the CMS
+    (Flightdeck) app login cms_app, which is not sysadmin and is outside the
+    ADR-003 boundary. After the Ed-Fi database deployment, run
+    Set-EdfiLeastPrivilege.ps1 -Apply to take edfi_app back off sysadmin.
 
     Examples:
       .\New-EdfiLogin.ps1
@@ -26,13 +29,13 @@ param(
     [string]$ServerInstance,
     [pscredential]$AdminCredential,
     [string]$LoginName = 'edfi_app',
-    [string]$CredentialScript = 'C:\temp\ci-sql.ps1',
+    [string]$CredentialScript = '',
     [string]$SecretsOut = 'C:\temp\edfi-sql.ps1'
 )
 
 $ErrorActionPreference = 'Stop'
 
-if ((-not $ServerInstance -or -not $AdminCredential) -and (Test-Path $CredentialScript)) {
+if ((-not $ServerInstance -or -not $AdminCredential) -and $CredentialScript -and (Test-Path $CredentialScript)) {
     . $CredentialScript
     if (-not $ServerInstance -and $Global:CiSrv) { $ServerInstance = $Global:CiSrv }
     if (-not $AdminCredential -and $Global:CiUsr -and $Global:CiPwd) {
@@ -94,4 +97,4 @@ Set-Content -Path $SecretsOut -Value $secrets -Encoding ASCII
 Write-Host ""
 Write-Host "Credentials written to $SecretsOut (outside the repo - do not commit)." -ForegroundColor Yellow
 Write-Host "Open with: notepad $SecretsOut  (you need the password for configuration.json on the VM)." -ForegroundColor Yellow
-Write-Host "Reminder: drop $LoginName from sysadmin after PHX-3.3 completes." -ForegroundColor DarkGray
+Write-Host "Reminder: after the Ed-Fi database deployment, run Set-EdfiLeastPrivilege.ps1 -Apply." -ForegroundColor DarkGray

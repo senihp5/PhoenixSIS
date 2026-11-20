@@ -89,3 +89,26 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 - **Baselines DONE (mandatory item closed):** `_tools\Backup-EdfiBaseline.ps1` set SIMPLE recovery and wrote `E:\backups\EdFi_*_baseline.bak` for all four. Sizes: Admin 16 MB, Security 16 MB, Ods_Minimal_Template 208 MB, Ods_Populated_Template 976 MB.
 - PHX-3.2 also re-verified same day: tcpping 4/4 from both apps, DNS/cert/https 200 on phoenix.newheightsed.com, VNet route-all settings confirmed.
 - Still open: downgrade `edfi_app` from sysadmin after Phase B; delete `C:\Temp\EdFiRebuild`, `C:\Temp\Run-EdfiPhaseA.ps1`, `C:\Temp\dotnet-install.ps1` on the VM; add deny-all/IP access restriction on `nh-edfi-cus` BEFORE the WebApi goes live; rotate the PhoenixSIS-Dev Entra client secret (~Jan expiry).
+
+---
+
+## On-site hardening (2026-11-20)
+
+### #3 — `edfi_app` least privilege ✅ DONE
+
+- `_tools\Set-EdfiLeastPrivilege.ps1 -Apply` (admin credential = `decisioned-admin`, password built at runtime from `kv-decisioned-prod/sql-admin-password`; `vm-data-admin-password` is the VM's Windows account and fails SQL auth). Sets each EdFi_* / sandbox DB owner to `sa`, creates or relinks the `edfi_app` user, grants `db_owner` per database, then drops `edfi_app` from `sysadmin`. `-Rollback` re-adds sysadmin.
+- **Wall: `IS_ROLEMEMBER` returns NULL for a just-created user** inside the same batch, so the first apply skipped every grant (db_owner=0, API down). Fix: test membership against `sys.database_role_members` joined on the SID (`Get-EdfiDbUserGrantSql` in `_tools\EdfiSql.Common.ps1`).
+- **Wall: stale `dbo` after RESTORE** — a restored DB keeps the old owner SID. Changing the owner to `sa` resyncs it. `New-EdfiSandbox.ps1` / `Reset-EdfiSandbox.ps1` now run RESTORE/DROP under a prompted `-AdminCredential` and apply the same grant SQL to new sandboxes.
+- Verified: smoke test returned 3 students as `edfi_app` (non-sysadmin).
+
+### #2 — WebApi runs 64-bit ✅ DONE (commit 3e90198)
+
+- `_tools\Set-EdfiWebApi64Bit.ps1 -Apply` sets `processPath="%ProgramFiles%\dotnet\dotnet.exe"` in web.config via Kudu VFS (bare `dotnet` resolved to the x86 host under ANCM). Backup at `C:\temp\nh-edfi-cus.web.config.bak`; `-Rollback` restores it.
+- `-RemoveHwIntrinsicWorkaround` deleted the `DOTNET_EnableHWIntrinsic` app setting (it was only needed for the x86 host) and re-verified `/metadata/` 200.
+- **PITFALL: any redeploy of the WebApi (zip deploy / Run-EdfiPhaseB) overwrites web.config and puts the app back on the x86 host.** Re-run `Set-EdfiWebApi64Bit.ps1 -Apply` after every redeploy; report mode (no switches) shows which host is running.
+- PowerShell 7 gotcha (same as the 5.1 note above): `@(Invoke-RestMethod ...).Count` returns 1 for a JSON array. Assign first: `$s = Invoke-RestMethod ...; $s.Count`.
+
+### #1 — Lock `nh-edfi-cus` to the private endpoint (in progress)
+
+- Private DNS zone `privatelink.azurewebsites.net` (RG idcardocr) already holds `nh-edfi-cus` and `nh-edfi-cus.scm` → 10.10.7.4; VPN reaches 10.10.7.4:443.
+- The workstation's DNS does not use the private zone (both names resolve to the public IP 23.101.125.65), so #1a adds hosts-file entries before #1b disables public network access.
