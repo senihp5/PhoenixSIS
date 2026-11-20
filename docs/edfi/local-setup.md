@@ -108,7 +108,21 @@ Ed-Fi's Docker images treat SQL Server as **experimental** (no pre-built MSSQL c
 - **PITFALL: any redeploy of the WebApi (zip deploy / Run-EdfiPhaseB) overwrites web.config and puts the app back on the x86 host.** Re-run `Set-EdfiWebApi64Bit.ps1 -Apply` after every redeploy; report mode (no switches) shows which host is running.
 - PowerShell 7 gotcha (same as the 5.1 note above): `@(Invoke-RestMethod ...).Count` returns 1 for a JSON array. Assign first: `$s = Invoke-RestMethod ...; $s.Count`.
 
-### #1 — Lock `nh-edfi-cus` to the private endpoint (in progress)
+### #1 — Lock `nh-edfi-cus` to the private endpoint ✅ DONE
 
 - Private DNS zone `privatelink.azurewebsites.net` (RG idcardocr) already holds `nh-edfi-cus` and `nh-edfi-cus.scm` → 10.10.7.4; VPN reaches 10.10.7.4:443.
-- The workstation's DNS does not use the private zone (both names resolve to the public IP 23.101.125.65), so #1a adds hosts-file entries before #1b disables public network access.
+- The workstation's DNS does not use the private zone (both names resolved to the public IP 23.101.125.65).
+- **#1a:** hosts-file entries on the dev workstation (backup `C:\temp\hosts.bak`): `10.10.7.4 nh-edfi-cus.azurewebsites.net` and `10.10.7.4 nh-edfi-cus.scm.azurewebsites.net`. The scm entry keeps Kudu (and `Set-EdfiWebApi64Bit.ps1`) working after lockdown.
+- **#1b:** `az webapp update -g IDCardOCR -n nh-edfi-cus --set publicNetworkAccess=Disabled`. Verified: private `/metadata/` 200; public IP path (`curl --resolve ...:23.101.125.65`) 403; OAuth token + `students?limit=3` = 3 over the private path. Rollback: `--set publicNetworkAccess=Enabled`.
+- **Consequence:** off the VPN the Ed-Fi API and Kudu are unreachable from the workstation (by design). nh-phoenix-cus reaches it over the VNet + private zone.
+- Sandbox credential variables from `C:\temp\edfi-sandbox.ps1`: `$EdfiSandboxKey`, `$EdfiSandboxSecret`, `$EdfiApiBase`.
+
+### #6 — VM C:\Temp cleanup ✅ DONE
+
+- SQL VM = **vm-decisioned-data** (RG-DECISIONED-PROD, 10.10.2.4); vm-decisioned-app (10.10.1.4) is not Phoenix's. Reached with `az vm run-command invoke ... --command-id RunPowerShellScript` (no RDP needed).
+- Removed the July package `C:\Temp\EdFi.Suite3.RestApi.Databases.Standard.6.1.0.7.3.20297` (+ `.zip`); its `configuration.json` held a connection string. The 11-05 rebuild files were already gone. `C:\Temp\VCUpdates` is not Phoenix — left in place.
+
+### Deferred
+
+- #9 rotate `decisioned-admin` SQL password — deferred by Patrick 2026-11-20 (shared NH infra; confirm consumers first).
+- #5 rotate PhoenixSIS-Dev Entra client secret — due ~2027-01.
