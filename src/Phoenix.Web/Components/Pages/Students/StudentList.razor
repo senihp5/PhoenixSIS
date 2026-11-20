@@ -1,0 +1,241 @@
+@page "/admin/students"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Students
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IStudentDirectory Directory
+@inject IEnrollmentService Enrollments
+@inject ICampusDirectory Campuses
+
+<PageTitle>Students</PageTitle>
+
+<h1>Students</h1>
+
+@if (!FeatureFlagService.IsEnabled("Students"))
+{
+    <div class="alert alert-info">
+        <h4>Student Pages Not Enabled</h4>
+        <p>
+            This page requires the <code>Students</code> module. Enable it in the
+            active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else
+{
+    <p class="text-muted">
+        Every student shown on this page is recorded in the audit trail as viewed by you.
+        <strong>Sample data only.</strong>
+    </p>
+
+    <div class="row g-2 mb-3 align-items-end" style="max-width: 48rem;">
+        <div class="col-md-6">
+            <label class="form-label" for="search">Search name or ID</label>
+            <input id="search" class="form-control" type="text" @bind="_search" disabled="@_busy" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="schoolYear">School year</label>
+            <input id="schoolYear" class="form-control" type="number" @bind="_schoolYear" disabled="@_busy" />
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-outline-primary w-100" @onclick="() => LoadAsync(1)" disabled="@_busy">Search</button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger"><pre class="mb-0">@_error</pre></div>
+    }
+    else if (_page is not null)
+    {
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Birth date</th>
+                    <th>Ed-Fi ID</th>
+                    <th>@YearLabel(_loadedYear) enrollment</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in _page.Items)
+                {
+                    <tr>
+                        <td><a href="@($"admin/students/{s.Id}")">@s.LastName, @s.FirstName @s.MiddleName</a></td>
+                        <td>@(s.BirthDate?.ToString("yyyy-MM-dd"))</td>
+                        <td><code>@(s.EdFiId ?? "-")</code></td>
+                        <td>@EnrollmentText(s.YearEnrollment)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="d-flex align-items-center gap-2 mb-4">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadAsync(_page.Page - 1)" disabled="@(_busy || _page.Page <= 1)">Previous</button>
+            <span>Page @_page.Page of @_page.PageCount - @_page.Total student(s)</span>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadAsync(_page.Page + 1)" disabled="@(_busy || _page.Page >= _page.PageCount)">Next</button>
+        </div>
+    }
+
+    <div class="card" style="max-width: 56rem;">
+        <div class="card-body">
+            <h5 class="card-title">Bulk enroll</h5>
+            <p class="text-muted mb-3">
+                Enrolls every student who has no enrollment at the campus for the school year.
+                Students who would break an enrollment rule are left for their own record page.
+                Each enrollment is audited.
+            </p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label" for="bulkCampus">Campus</label>
+                    <select id="bulkCampus" class="form-select" @bind="_bulkCampus" disabled="@_busy">
+                        @foreach (var c in Campuses.GetCampuses())
+                        {
+                            <option value="@c.Number">@c.Number - @c.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label" for="bulkYear">School year</label>
+                    <input id="bulkYear" class="form-control" type="number" @bind="_bulkYear" disabled="@_busy" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="bulkEntry">Entry date</label>
+                    <input id="bulkEntry" class="form-control" type="date" @bind="_bulkEntry" disabled="@_busy" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="bulkGrade">Grade level</label>
+                    <select id="bulkGrade" class="form-select" @bind="_bulkGrade" disabled="@_busy">
+                        @foreach (var g in Enum.GetValues<GradeLevel>())
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-outline-primary me-2" @onclick="() => BulkAsync(false)" disabled="@_busy">Preview</button>
+                <button class="btn btn-primary" @onclick="() => BulkAsync(true)" disabled="@(!CanApplyBulk)">@BulkApplyLabel</button>
+            </div>
+            @if (_bulkError is not null)
+            {
+                <div class="alert alert-danger mt-3 mb-0">@_bulkError</div>
+            }
+            else if (_bulkResult is not null)
+            {
+                <div class="alert @(_bulkResult.Applied ? "alert-success" : "alert-secondary") mt-3 mb-0">
+                    @BulkSummary
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string? _search;
+    private int _schoolYear = CurrentSchoolYear();
+    private int _loadedYear;
+    private StudentPage? _page;
+    private string? _error;
+    private bool _busy;
+
+    private string? _bulkCampus;
+    private int _bulkYear = CurrentSchoolYear();
+    private DateOnly _bulkEntry = new(CurrentSchoolYear() - 1, 8, 1);
+    private GradeLevel _bulkGrade = GradeLevel.AdultEducation;
+    private BulkEnrollRequest? _previewedRequest;
+    private BulkEnrollResult? _bulkResult;
+    private string? _bulkError;
+
+    private BulkEnrollRequest CurrentBulkRequest => new(_bulkCampus ?? string.Empty, _bulkYear, _bulkEntry, _bulkGrade);
+
+    private bool CanApplyBulk =>
+        !_busy
+        && _bulkResult is { Applied: false, StudentIds.Count: > 0 }
+        && _previewedRequest == CurrentBulkRequest;
+
+    private string BulkApplyLabel =>
+        CanApplyBulk ? $"Enroll {_bulkResult!.StudentIds.Count} student(s)" : "Enroll (preview first)";
+
+    private string BulkSummary => _bulkResult is null
+        ? string.Empty
+        : _bulkResult.Applied
+            ? $"Enrolled {_bulkResult.StudentIds.Count} student(s); {_bulkResult.AlreadyEnrolled} already enrolled or skipped."
+            : $"{_bulkResult.StudentIds.Count} student(s) would be enrolled; {_bulkResult.AlreadyEnrolled} already enrolled or skipped.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _bulkCampus = Campuses.GetCampuses().FirstOrDefault()?.Number;
+        await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        if (!FeatureFlagService.IsEnabled("Students"))
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _page = await Directory.SearchAsync(_search, _schoolYear, page);
+            _loadedYear = _schoolYear;
+        }
+        catch (Exception ex)
+        {
+            _page = null;
+            _error = ex.Message;
+        }
+
+        _busy = false;
+    }
+
+    private async Task BulkAsync(bool apply)
+    {
+        if (!FeatureFlagService.IsEnabled("Students") || (apply && !CanApplyBulk))
+        {
+            return;
+        }
+
+        var request = CurrentBulkRequest;
+        _busy = true;
+        _bulkError = null;
+
+        try
+        {
+            _bulkResult = await Enrollments.EnrollManyAsync(request, apply);
+            _previewedRequest = apply ? null : request;
+        }
+        catch (Exception ex)
+        {
+            _bulkResult = null;
+            _previewedRequest = null;
+            _bulkError = ex.Message;
+        }
+
+        _busy = false;
+
+        if (apply && _bulkError is null)
+        {
+            await LoadAsync(_page?.Page ?? 1);
+        }
+    }
+
+    private static int CurrentSchoolYear()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return today.Month >= 7 ? today.Year + 1 : today.Year;
+    }
+
+    private static string YearLabel(int schoolYear) => $"{schoolYear - 1}-{schoolYear % 100:D2}";
+
+    private static string EnrollmentText(EnrollmentRecord? e) => e switch
+    {
+        null => "Not enrolled",
+        { IsOpen: true } => $"{e.CampusNumber}, since {e.EntryDate:yyyy-MM-dd}",
+        _ => $"{e.CampusNumber}, exited {e.ExitDate:yyyy-MM-dd}"
+    };
+}

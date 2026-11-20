@@ -5,6 +5,7 @@ using Phoenix.Core.Features;
 using Phoenix.Core.Modules;
 using Phoenix.Infrastructure.DataMigration;
 using Phoenix.Infrastructure.EdFi;
+using Phoenix.Infrastructure.Students;
 
 namespace Phoenix.Infrastructure.Modules;
 
@@ -18,7 +19,8 @@ public static class ModuleBootstrapper
     [
         new CoreModule(),
         new EdFiModule(),
-        new MigrationModule()
+        new MigrationModule(),
+        new StudentsModule()
     ];
 
     /// <summary>

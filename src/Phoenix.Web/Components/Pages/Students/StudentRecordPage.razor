@@ -1,0 +1,308 @@
+@page "/admin/students/{StudentId:guid}"
+@attribute [Authorize(Policy = "RequireAdmin")]
+@rendermode InteractiveServer
+@using Phoenix.Core.Students
+@inject Phoenix.Core.Features.IFeatureFlagService FeatureFlagService
+@inject IStudentDirectory Directory
+@inject IEnrollmentService Enrollments
+@inject ICampusDirectory Campuses
+
+<PageTitle>Student Record</PageTitle>
+
+<p><a href="admin/students">Back to students</a></p>
+
+@if (!FeatureFlagService.IsEnabled("Students"))
+{
+    <div class="alert alert-info">
+        <h4>Student Pages Not Enabled</h4>
+        <p>
+            This page requires the <code>Students</code> module. Enable it in the
+            active deployment's configuration and restart the application.
+        </p>
+    </div>
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-danger">
+        <strong>The student record could not be opened.</strong>
+        <pre class="mb-0">@_loadError</pre>
+    </div>
+}
+else if (_notFound)
+{
+    <div class="alert alert-warning">No student with this ID.</div>
+}
+else if (_detail is not null)
+{
+    var s = _detail.Student;
+    <h1>@s.LastName, @s.FirstName @s.MiddleName</h1>
+    <p class="text-muted">
+        Birth date @(s.BirthDate?.ToString("yyyy-MM-dd") ?? "not recorded").
+        Opening this page is recorded in the audit trail. <strong>Sample data only.</strong>
+    </p>
+
+    <h4 class="mt-4">Identifiers</h4>
+    <table class="table table-sm align-middle" style="max-width: 36rem;">
+        <thead>
+            <tr><th>Source system</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var i in _detail.Identifiers)
+            {
+                <tr><td>@i.SourceSystem</td><td><code>@i.Value</code></td></tr>
+            }
+        </tbody>
+    </table>
+
+    <h4 class="mt-4">Enrollments</h4>
+    @if (_detail.Enrollments.Count == 0)
+    {
+        <p class="text-muted">No enrollments.</p>
+    }
+    else
+    {
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Campus</th>
+                    <th>School year</th>
+                    <th>Entry</th>
+                    <th>Grade</th>
+                    <th>Kind</th>
+                    <th>FTE</th>
+                    <th>Primary</th>
+                    <th>Exit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _detail.Enrollments)
+                {
+                    <tr>
+                        <td>@CampusName(e.CampusNumber)</td>
+                        <td>@YearLabel(e.SchoolYear)</td>
+                        <td>@(e.EntryDate.ToString("yyyy-MM-dd"))</td>
+                        <td>@e.EntryGradeLevel</td>
+                        <td>@e.Kind</td>
+                        <td>@(e.FullTimeEquivalency.ToString("0.00"))</td>
+                        <td>@(e.IsPrimary ? "Yes" : "No")</td>
+                        <td>
+                            @if (e.IsOpen)
+                            {
+                                <div class="d-flex gap-1 align-items-center">
+                                    <input class="form-control form-control-sm" type="date" style="width: 10rem;"
+                                           value="@(ExitDateFor(e.Id).ToString("yyyy-MM-dd"))"
+                                           @onchange="ev => SetExitDate(e.Id, ev.Value)" disabled="@_busy" />
+                                    <select class="form-select form-select-sm" style="width: 10rem;"
+                                            @onchange="ev => SetExitReason(e.Id, ev.Value)" disabled="@_busy">
+                                        @foreach (var r in Enum.GetValues<ExitReason>())
+                                        {
+                                            <option value="@r" selected="@(ExitReasonFor(e.Id) == r)">@r</option>
+                                        }
+                                    </select>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ExitAsync(e.Id)" disabled="@_busy">Exit</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <span>@(e.ExitDate?.ToString("yyyy-MM-dd")) (@e.ExitReason)</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="card mt-4" style="max-width: 56rem;">
+        <div class="card-body">
+            <h5 class="card-title">Enroll</h5>
+            <p class="text-muted">The entry date cannot be changed later; an enrollment can only be exited.</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label" for="campus">Campus</label>
+                    <select id="campus" class="form-select" @bind="_campus" disabled="@_busy">
+                        @foreach (var c in Campuses.GetCampuses())
+                        {
+                            <option value="@c.Number">@c.Number - @c.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label" for="year">School year</label>
+                    <input id="year" class="form-control" type="number" @bind="_schoolYear" disabled="@_busy" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="entry">Entry date</label>
+                    <input id="entry" class="form-control" type="date" @bind="_entryDate" disabled="@_busy" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="grade">Grade level</label>
+                    <select id="grade" class="form-select" @bind="_grade" disabled="@_busy">
+                        @foreach (var g in Enum.GetValues<GradeLevel>())
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="kind">Kind</label>
+                    <select id="kind" class="form-select" @bind="_kind" disabled="@_busy">
+                        @foreach (var k in Enum.GetValues<EnrollmentKind>())
+                        {
+                            <option value="@k">@k</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label" for="fte">FTE</label>
+                    <input id="fte" class="form-control" type="number" step="0.05" min="0.05" max="1" @bind="_fte" disabled="@_busy" />
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check mt-4">
+                        <input id="primary" class="form-check-input" type="checkbox" @bind="_primary" disabled="@_busy" />
+                        <label class="form-check-label" for="primary">Primary campus</label>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-primary mt-3" @onclick="EnrollAsync" disabled="@_busy">Enroll</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (_actionError is not null)
+    {
+        <div class="alert alert-danger mt-3">@_actionError</div>
+    }
+    else if (_actionMessage is not null)
+    {
+        <div class="alert alert-success mt-3">@_actionMessage</div>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid StudentId { get; set; }
+
+    private StudentDetail? _detail;
+    private bool _notFound;
+    private string? _loadError;
+    private string? _actionError;
+    private string? _actionMessage;
+    private bool _busy;
+
+    private string? _campus;
+    private int _schoolYear = CurrentSchoolYear();
+    private DateOnly _entryDate = DateOnly.FromDateTime(DateTime.Today);
+    private GradeLevel _grade = GradeLevel.AdultEducation;
+    private EnrollmentKind _kind = EnrollmentKind.Regular;
+    private decimal _fte = 1.0m;
+    private bool _primary = true;
+
+    private readonly Dictionary<Guid, DateOnly> _exitDates = [];
+    private readonly Dictionary<Guid, ExitReason> _exitReasons = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _campus ??= Campuses.GetCampuses().FirstOrDefault()?.Number;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!FeatureFlagService.IsEnabled("Students"))
+        {
+            return;
+        }
+
+        _loadError = null;
+
+        try
+        {
+            _detail = await Directory.GetAsync(StudentId);
+            _notFound = _detail is null;
+        }
+        catch (Exception ex)
+        {
+            _detail = null;
+            _loadError = ex.Message;
+        }
+    }
+
+    private async Task EnrollAsync()
+    {
+        await RunActionAsync(
+            () => Enrollments.EnrollAsync(new NewEnrollment(
+                StudentId, _campus ?? string.Empty, _schoolYear, _entryDate, _grade, _kind, _fte, _primary)),
+            "Enrolled.");
+    }
+
+    private async Task ExitAsync(Guid enrollmentId)
+    {
+        await RunActionAsync(
+            () => Enrollments.ExitAsync(enrollmentId, ExitDateFor(enrollmentId), ExitReasonFor(enrollmentId)),
+            "Exited.");
+    }
+
+    private async Task RunActionAsync(Func<Task> action, string successMessage)
+    {
+        if (!FeatureFlagService.IsEnabled("Students"))
+        {
+            return;
+        }
+
+        _busy = true;
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            await action();
+            _actionMessage = successMessage;
+            await LoadAsync();
+        }
+        catch (EnrollmentRuleException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"The change was not saved: {ex.Message}";
+        }
+
+        _busy = false;
+    }
+
+    private DateOnly ExitDateFor(Guid id) =>
+        _exitDates.TryGetValue(id, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
+
+    private ExitReason ExitReasonFor(Guid id) =>
+        _exitReasons.TryGetValue(id, out var r) ? r : ExitReason.Withdrew;
+
+    private void SetExitDate(Guid id, object? value)
+    {
+        if (DateOnly.TryParseExact(value?.ToString(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+        {
+            _exitDates[id] = d;
+        }
+    }
+
+    private void SetExitReason(Guid id, object? value)
+    {
+        if (Enum.TryParse<ExitReason>(value?.ToString(), out var r))
+        {
+            _exitReasons[id] = r;
+        }
+    }
+
+    private string CampusName(string number) =>
+        Campuses.Find(number) is { } c ? $"{c.Number} - {c.Name}" : number;
+
+    private static string YearLabel(int schoolYear) => $"{schoolYear - 1}-{schoolYear % 100:D2}";
+
+    private static int CurrentSchoolYear()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return today.Month >= 7 ? today.Year + 1 : today.Year;
+    }
+}

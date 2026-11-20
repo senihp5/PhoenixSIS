@@ -273,7 +273,7 @@ public sealed class EnrollmentService : IEnrollmentService
 
     private static string FormatYear(int schoolYear) => $"{schoolYear - 1}-{schoolYear % 100:D2}";
 
-    private static EnrollmentRecord Map(Enrollment e) =>
+    internal static EnrollmentRecord Map(Enrollment e) =>
         new(e.Id, e.StudentId, e.CampusNumber, e.SchoolYear, e.EntryDate, e.EntryGradeLevel,
             e.Kind, e.FullTimeEquivalency, e.IsPrimary, e.ExitDate, e.ExitReason);
 }
