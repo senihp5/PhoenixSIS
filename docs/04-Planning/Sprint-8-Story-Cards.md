@@ -39,21 +39,21 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 **Estimate:** 6-8 hrs
 
 ### Tasks
-- [ ] Core `Phoenix.Core\Auditing`: `IAuditLog` (`RecordAsync`, `RecordManyAsync`),
+- [x] Core `Phoenix.Core\Auditing`: `IAuditLog` (`RecordAsync`, `RecordManyAsync`),
       `AuditEntry`, `AuditAction` (View, Create, Update, Enroll, Exit, SyncPreview, SyncApply,
       AuditView), `ICurrentUser` (`ActorId`, `ActorName`, system actor).
-- [ ] Infrastructure: `AuditEvent` entity + EF migration `AddAuditEvent` (indexes on
+- [x] Infrastructure: `AuditEvent` entity + EF migration `AddAuditEvent` (indexes on
       StudentId+OccurredUtc and ActorId+OccurredUtc) + trigger rejecting UPDATE/DELETE;
       `AuditLog` service (stages rows on the shared DbContext; `RecordAsync` for reads saves
       immediately).
-- [ ] Phoenix.Web: `CurrentUser` from `AuthenticationStateProvider` (scoped per circuit).
-- [ ] `StudentIdentityService`: student created and identifier added are audited in the same
+- [x] Phoenix.Web: `CurrentUser` from `AuthenticationStateProvider` (scoped per circuit).
+- [x] `StudentIdentityService`: student created and identifier added are audited in the same
       save (fail closed).
-- [ ] Tests (InMemory + fake current user): create/identifier writes emit events with actor
+- [x] Tests (InMemory + fake current user): create/identifier writes emit events with actor
       and student; no names in `Summary`; a failing audit write fails the operation.
 
 ### Definition of Done
-- [ ] Migration builds; identity writes audited; tests + architecture tests green.
+- [x] Migration builds; identity writes audited; tests + architecture tests green.
 
 ---
 
@@ -62,18 +62,18 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 **Estimate:** 6-8 hrs
 
 ### Tasks
-- [ ] Core `Phoenix.Core\Students`: `EnrollmentRecord`, `NewEnrollment`, codes
+- [x] Core `Phoenix.Core\Students`: `EnrollmentRecord`, `NewEnrollment`, codes
       (`GradeLevel`, `EnrollmentKind`, `ExitReason`), `IEnrollmentService`
       (`GetForStudentAsync`, `EnrollAsync`, `ExitAsync`, `EnrollManyAsync`), `CampusInfo` +
       campus list from config.
-- [ ] Infrastructure: `Enrollment` entity + migration `AddEnrollment` (FK to Student, index
+- [x] Infrastructure: `Enrollment` entity + migration `AddEnrollment` (FK to Student, index
       on StudentId+SchoolYear); `EnrollmentService` enforcing the rules above; every enroll and
       exit audited in the same save.
-- [ ] Tests: each rule; enroll + exit audited; bulk enroll skips students already enrolled for
+- [x] Tests: each rule; enroll + exit audited; bulk enroll skips students already enrolled for
       that year.
 
 ### Definition of Done
-- [ ] Enrollments persist with rules enforced and audited; build + tests green.
+- [x] Enrollments persist with rules enforced and audited; build + tests green.
 
 ---
 
@@ -82,18 +82,18 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 **Estimate:** 6-8 hrs
 
 ### Tasks
-- [ ] `Students` flag (base OFF, Phoenix-Dev ON); `StudentsModule : IModule` (pages only -
+- [x] `Students` flag (base OFF, Phoenix-Dev ON); `StudentsModule : IModule` (pages only -
       services are core).
-- [ ] `admin/students`: paged list (25), search by name or PHX id, columns name / Ed-Fi id /
+- [x] `admin/students`: paged list (25), search by name or PHX id, columns name / Ed-Fi id /
       current-year enrollment; one View event per student shown.
-- [ ] `admin/students/{id}`: identifiers, enrollments, **Enroll** form, **Exit** form; one View
+- [x] `admin/students/{id}`: identifiers, enrollments, **Enroll** form, **Exit** form; one View
       event on open.
-- [ ] **Bulk enroll** on the list page: "Enroll every student without a {year} enrollment at
+- [x] **Bulk enroll** on the list page: "Enroll every student without a {year} enrollment at
       {campus}, entry date {date}" - preview count, then apply; audited per student.
-- [ ] One-page design brief (Who/What/Where/Why) + module doc `docs\features\modules\Students.md`.
+- [x] One-page design brief (Who/What/Where/Why) + module doc `docs\features\modules\Students.md`.
 
 ### Definition of Done
-- [ ] Flag OFF -> friendly message; flag ON -> list, detail, enroll, exit, bulk enroll; every
+- [x] Flag OFF -> friendly message; flag ON -> list, detail, enroll, exit, bulk enroll; every
       view and change audited; build + tests green.
 
 ---
@@ -103,19 +103,19 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 **Estimate:** 4-6 hrs
 
 ### Tasks
-- [ ] Probe live: `exitWithdrawTypeDescriptors`, `enrollmentTypeDescriptors`, grade levels;
+- [x] Probe live: `exitWithdrawTypeDescriptors`, `enrollmentTypeDescriptors`, grade levels;
       record URIs in `docs\edfi\texas-sample.md`.
-- [ ] EdFi boundary mapping: Phoenix `GradeLevel` / `EnrollmentKind` / `ExitReason` ->
+- [x] EdFi boundary mapping: Phoenix `GradeLevel` / `EnrollmentKind` / `ExitReason` ->
       Ed-Fi descriptor URIs (config-overridable).
-- [ ] `StudentSyncService`: one SSA per Phoenix enrollment matching the target campus +
+- [x] `StudentSyncService`: one SSA per Phoenix enrollment matching the target campus +
       school year (entry/exit dates, grade, kind, FTE, primary); no matching enrollment ->
       Skipped ("no 2026-27 enrollment at 220822001"); drop `EntryDate` from `EdFiSyncTarget`
       and the page; keep the 403 enroll-first recovery.
-- [ ] Sync audited: preview = SyncPreview per student listed; apply = SyncApply per student.
-- [ ] Tests updated: enrollments drive the SSA; exit sent; unenrolled skipped; audit events.
+- [x] Sync audited: preview = SyncPreview per student listed; apply = SyncApply per student.
+- [x] Tests updated: enrollments drive the SSA; exit sent; unenrolled skipped; audit events.
 
 ### Definition of Done
-- [ ] Sync sends Phoenix enrollment data; build + tests green.
+- [x] Sync sends Phoenix enrollment data; build + tests green.
 
 ---
 
@@ -124,17 +124,17 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 **Estimate:** 4-6 hrs
 
 ### Tasks
-- [ ] `admin/audit` (RequireAdmin, no flag): newest first, paged, filter by student / actor /
+- [x] `admin/audit` (RequireAdmin, no flag): newest first, paged, filter by student / actor /
       date range; opening it records AuditView.
-- [ ] Live: apply both migrations to PhoenixSIS; bulk-enroll the 13 sample students
+- [x] Live: apply both migrations to PhoenixSIS; bulk-enroll the 13 sample students
       (campus 220822001, SY 2027, entry 2026-08-17); exit one student; sync preview + run;
       verify in Ed-Fi (SSA dates, one exitWithdrawDate) and in SQL (audit rows per student,
       actor = Patrick, no names in Summary); prove the trigger blocks UPDATE and DELETE.
-- [ ] Docs: ADR-004 -> Accepted; module docs; retro `docs\retros\sprint-08.md`; tag
+- [x] Docs: ADR-004 -> Accepted; module docs; retro `docs\retros\sprint-08.md`; tag
       `phoenix-sprint-08`; project status.
 
 ### Definition of Done
-- [ ] Every student view/change in Phoenix is in the audit trail; sync uses enrollments;
+- [x] Every student view/change in Phoenix is in the audit trail; sync uses enrollments;
       verified live; sprint tagged.
 
 ---
@@ -144,3 +144,14 @@ domain); Epic 3 - EdFi Integration (sync from enrollments)
 - Separate the application SQL login from the schema owner so the app cannot disable the
   audit trigger (later hardening).
 - Correcting an entry date after sync (needs Ed-Fi SSA delete + re-create) - later sprint.
+
+---
+
+## Close note (2026-11-20)
+
+All five stories done; retro in `docs\retros\sprint-08.md`. Differences from the cards:
+- 8.1: the contract is `StageAsync` / `RecordAsync` (no `RecordManyAsync`).
+- 8.4: apply writes two SyncApply rows per sent student (send started, then the result).
+- 8.5: 19 students were bulk-enrolled, not 13 (the 6 Flightdeck sample students were added).
+- 8.5: one item is carried over - a second live sync run to prove that a student whose only
+  enrollment is exited can still be updated in Ed-Fi.

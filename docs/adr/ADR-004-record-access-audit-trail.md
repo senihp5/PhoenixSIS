@@ -1,6 +1,6 @@
 # ADR-004: Record-Access Audit Trail
 
-**Status:** Proposed (Sprint 8)
+**Status:** Accepted (Sprint 8 close, 2026-11-20 - built in PHX-8.1 to 8.5 and verified live)
 **Date:** 2026-11-20
 **Deciders:** Patrick Hines
 
