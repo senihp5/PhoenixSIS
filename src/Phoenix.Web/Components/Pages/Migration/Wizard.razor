@@ -62,6 +62,13 @@ else
             (@_result.SourceSystem) — @_result.Total record(s):
             @_result.Created @(_result.Applied ? "created" : "would be created"),
             @_result.Matched @(_result.Applied ? "matched" : "would match").
+            @if (_result.IdentifiersAdded > 0 || _result.Conflicts > 0)
+            {
+                <span>
+                    @_result.IdentifiersAdded extra identifier(s) @(_result.Applied ? "added" : "would be added"),
+                    @_result.Conflicts conflict(s).
+                </span>
+            }
         </div>
 
         <table class="table table-striped align-middle">
@@ -70,6 +77,7 @@ else
                     <th>External ID</th>
                     <th>Name</th>
                     <th>Outcome</th>
+                    <th>Extra identifiers</th>
                 </tr>
             </thead>
             <tbody>
@@ -79,6 +87,19 @@ else
                         <td><code>@row.ExternalId</code></td>
                         <td>@row.DisplayName</td>
                         <td>@Label(row.Action)</td>
+                        <td>
+                            @if (row.IdentifiersAdded > 0)
+                            {
+                                <span>@row.IdentifiersAdded @(_result.Applied ? "added" : "to add")</span>
+                            }
+                            @if (row.ConflictKinds.Count > 0)
+                            {
+                                <div class="text-danger">
+                                    Not added - already mapped to a different student:
+                                    @string.Join(", ", row.ConflictKinds)
+                                </div>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>

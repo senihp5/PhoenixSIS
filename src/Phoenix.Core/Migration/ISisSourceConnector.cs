@@ -10,7 +10,26 @@ public sealed record SourceStudentRecord(
     string FirstName,
     string? MiddleName,
     string LastName,
-    DateOnly? BirthDate);
+    DateOnly? BirthDate,
+    IReadOnlyList<SourceIdentifier>? Identifiers = null)
+{
+    /// <summary>The extra identifiers, never null.</summary>
+    public IReadOnlyList<SourceIdentifier> ExtraIdentifiers => Identifiers ?? [];
+}
+
+/// <summary>
+/// One more identifier the source holds for a student, besides
+/// <see cref="SourceStudentRecord.ExternalId"/> (PHX-9.1). <see cref="Kind"/>
+/// is the source's own name for it, for example "StateStudentNumber". It is
+/// stored as a mapped identifier row (ADR-002) under the source system
+/// "&lt;Source&gt;:&lt;Kind&gt;" - see <see cref="SourceSystemFor"/>. Only
+/// ExternalId is used to match a record to a student on re-import.
+/// </summary>
+public sealed record SourceIdentifier(string Kind, string Value)
+{
+    public static string SourceSystemFor(string sourceSystem, string kind) =>
+        $"{sourceSystem}:{kind}";
+}
 
 /// <summary>
 /// Reads students from some source SIS as source-neutral records. Each source

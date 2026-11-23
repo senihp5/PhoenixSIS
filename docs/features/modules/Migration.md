@@ -68,3 +68,17 @@ canonical identity service and `PhoenixDbContext` it builds on are core services
 Live PowerSchool connector; file/CSV upload; field-mapping UI; additional source
 connectors — all behind `ISisSourceConnector`, so Phoenix's schema never changes
 to accommodate a source.
+
+## Extra identifiers (PHX-9.1)
+
+A `SourceStudentRecord` can carry more identifiers than its primary `ExternalId`
+(`Identifiers`: kind + value). The migration stores each as a mapped identifier row (ADR-002)
+under the source system `<Source>:<Kind>`, for example `Flightdeck:StateStudentNumber`.
+
+- Only `ExternalId` matches a record to a student. Extra identifiers never match or merge.
+- Already mapped to the same student: left alone. Mapped to a different student: reported as
+  a conflict in the wizard and never moved. Blank value: ignored.
+- Each added identifier is audited (`Update` / `StudentIdentifier`; the summary names the
+  source system, never the value).
+- The Flightdeck sample emits `StudentNumber`, `PowerSchoolStudentID` and
+  `StateStudentNumber` (made-up values) for its six students.

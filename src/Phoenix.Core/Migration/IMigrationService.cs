@@ -9,10 +9,21 @@ public enum MigrationAction
     Matched
 }
 
+/// <summary>
+/// <see cref="IdentifiersAdded"/> counts the extra identifiers added (or, in a
+/// dry run, that would be added) for this student. <see cref="Conflicts"/>
+/// names the identifier kinds whose value is already mapped to a different
+/// student; those are never added or moved (PHX-9.1).
+/// </summary>
 public sealed record MigrationRowResult(
     string ExternalId,
     string DisplayName,
-    MigrationAction Action);
+    MigrationAction Action,
+    int IdentifiersAdded = 0,
+    IReadOnlyList<string>? Conflicts = null)
+{
+    public IReadOnlyList<string> ConflictKinds => Conflicts ?? [];
+}
 
 /// <summary>
 /// Outcome of a migration run. When <see cref="Applied"/> is false (dry run),
@@ -27,6 +38,8 @@ public sealed record MigrationResult(
     public int Total => Rows.Count;
     public int Created => Rows.Count(r => r.Action == MigrationAction.Created);
     public int Matched => Rows.Count(r => r.Action == MigrationAction.Matched);
+    public int IdentifiersAdded => Rows.Sum(r => r.IdentifiersAdded);
+    public int Conflicts => Rows.Sum(r => r.ConflictKinds.Count);
 }
 
 /// <summary>

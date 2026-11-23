@@ -11,8 +11,8 @@ namespace Phoenix.Infrastructure.DataMigration;
 /// Flightdeck's canonical student key is Student.StudentDCID (long), surfaced
 /// here as <see cref="SourceStudentRecord.ExternalId"/>. Flightdeck also carries
 /// StudentNumber, PowerSchoolStudentID and StateStudentNumber (the 10-digit TSDS
-/// Unique ID); mapping those as additional Phoenix identifiers waits on
-/// SourceStudentRecord carrying more than one id (see the Open item in ADR-003).
+/// Unique ID); since PHX-9.1 they travel as extra identifiers and are stored as
+/// mapped rows under "Flightdeck:&lt;Kind&gt;". Every value below is made up.
 ///
 /// This returns a SAMPLE dataset shaped like Flightdeck. Reading live New Heights
 /// records is gated on the three conditions in ADR-003 (hardening complete, NH
@@ -30,13 +30,25 @@ public sealed class FlightdeckSourceConnector : ISisSourceConnector
         // ExternalId values stand in for Flightdeck Student.StudentDCID.
         IReadOnlyList<SourceStudentRecord> data =
         [
-            new("100457", "Marcus", null, "Ellison", new DateOnly(1990, 3, 18)),
-            new("100892", "Latoya", "R", "Simmons", new DateOnly(1986, 7, 2)),
-            new("101203", "Diego", null, "Vargas", new DateOnly(2002, 10, 9)),
-            new("101574", "Amara", null, "Okonkwo", new DateOnly(1997, 5, 24)),
-            new("101988", "Brandon", "K", "Pham", new DateOnly(2000, 12, 11)),
-            new("102341", "Shanice", null, "Williams", new DateOnly(1983, 9, 6)),
+            new("100457", "Marcus", null, "Ellison", new DateOnly(1990, 3, 18), Ids("260457", "70457", "9900100457")),
+            new("100892", "Latoya", "R", "Simmons", new DateOnly(1986, 7, 2), Ids("260892", "70892", "9900100892")),
+            new("101203", "Diego", null, "Vargas", new DateOnly(2002, 10, 9), Ids("261203", "71203", "9900101203")),
+            new("101574", "Amara", null, "Okonkwo", new DateOnly(1997, 5, 24), Ids("261574", "71574", "9900101574")),
+            new("101988", "Brandon", "K", "Pham", new DateOnly(2000, 12, 11), Ids("261988", "71988", "9900101988")),
+            new("102341", "Shanice", null, "Williams", new DateOnly(1983, 9, 6), Ids("262341", "72341", "9900102341")),
         ];
         return Task.FromResult(data);
     }
+
+    public const string StudentNumberKind = "StudentNumber";
+    public const string PowerSchoolStudentIdKind = "PowerSchoolStudentID";
+    public const string StateStudentNumberKind = "StateStudentNumber";
+
+    private static IReadOnlyList<SourceIdentifier> Ids(
+        string studentNumber, string powerSchoolStudentId, string stateStudentNumber) =>
+    [
+        new(StudentNumberKind, studentNumber),
+        new(PowerSchoolStudentIdKind, powerSchoolStudentId),
+        new(StateStudentNumberKind, stateStudentNumber)
+    ];
 }

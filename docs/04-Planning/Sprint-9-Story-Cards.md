@@ -57,18 +57,25 @@ Architecture tests stay green. Value-based secret check after every `git add`.
 **Estimate:** 5-7 hrs
 
 ### Tasks
-- [ ] Core `Phoenix.Core\Migration\ISisSourceConnector.cs`: `SourceIdentifier(Kind, Value)`;
+- [x] Core `Phoenix.Core\Migration\ISisSourceConnector.cs`: `SourceIdentifier(Kind, Value)`;
       `SourceStudentRecord` gains `IReadOnlyList<SourceIdentifier> Identifiers` with an empty
       default, so the Sample and TexasSample connectors compile unchanged.
-- [ ] `IStudentIdentityService`: one call that resolves or creates by the primary id and
+- [x] `IStudentIdentityService`: one call that resolves or creates by the primary id and
       adds any missing extra identifiers in the same save (each audited; a value already
       mapped to a different student is a reported conflict, never a silent re-point).
-- [ ] `MigrationService` + wizard preview: show how many identifiers will be added and list
+- [x] `MigrationService` + wizard preview: show how many identifiers will be added and list
       conflicts before Apply.
-- [ ] `FlightdeckSourceConnector` (sample): emit `StudentNumber`, `PowerSchoolStudentID` and
+- [x] `FlightdeckSourceConnector` (sample): emit `StudentNumber`, `PowerSchoolStudentID` and
       `StateStudentNumber` for the 6 sample students (made-up values, 10-digit state ids).
-- [ ] Tests: re-import adds only missing identifiers; conflict reported; no duplicates;
+- [x] Tests: re-import adds only missing identifiers; conflict reported; no duplicates;
       audit rows written; existing 88 tests unchanged.
+
+**Built 2026-11-23 (code + tests; NOT yet run live).** Differences from the tasks: no new identity
+call - the migration uses the existing `AddIdentifierAsync` per identifier (each its own audited
+save); a blank value is ignored and a repeated kind keeps its first value. The wizard shows the
+count per row and names conflicting kinds. Live check owed: restart the app (it was running the old
+build), Data Migration -> Flightdeck -> Preview (expect 6 would match, 18 to add) -> Apply, then open
+one of the six students and see four identifiers.
 
 ### Definition of Done
 - [ ] Re-importing the Flightdeck sample adds three identifiers per student and creates no
