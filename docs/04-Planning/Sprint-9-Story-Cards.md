@@ -1,15 +1,16 @@
-# Sprint 9: Multi-Identifier Sources + DS 6.1 Adult Demographics
+# Sprint 9: Multi-Identifier Sources, Addresses + Adult Demographics
 
-**Revision:** v1, 2026-11-20 (Proposed - Patrick chose the scope; details below are defaults)
+**Revision:** v2, 2026-11-23 (Patrick added addresses + automatic block-group lookup; 9.0 done; demographics are not core Ed-Fi 6.1)
 **Sprint Goal:** A source record can carry every identifier the source knows for a student,
-so the state ID reaches Ed-Fi as its own identification code. Phoenix holds the two DS 6.1
-facts Texas adult high school funding depends on - census block group and previous
-attendance as an adult - and sends them. The adult-only gap analysis becomes a planning doc
+so the state ID reaches Ed-Fi as its own identification code. Phoenix holds student
+addresses and sends them to Ed-Fi. Phoenix holds the two facts Texas adult high school
+funding depends on - census block group (looked up from the address) and previous
+attendance as an adult - ready for the TX extension. The adult-only gap analysis becomes a planning doc
 that later sprints are cut from.
 
-**Total Estimated Hours:** 24-33
+**Total Estimated Hours:** 34-46
 **Epics:** Epic 4 - Data Migration & Clean-Room Identity (9.1, 9.2); Epic 3 - EdFi
-Integration (9.2, 9.4); Epic 5 - AdultEd (9.3, 9.5)
+Integration (9.2, 9.4); Epic 5 - AdultEd (9.5, 9.6)
 
 **Modeling decisions (defaults - Patrick may change before the story starts):**
 - **Identifiers stay mapped rows (ADR-002).** `SourceStudentRecord` gains a list of extra
@@ -20,10 +21,10 @@ Integration (9.2, 9.4); Epic 5 - AdultEd (9.3, 9.5)
 - **State ID is not an SSN.** Only the TSDS Unique ID is sent to Ed-Fi as the "State"
   identification code. The existing SSN guard stays. Which source kind is the state ID is
   config (`EdFiApi:StateIdentifierSource`), default `Flightdeck:StateStudentNumber`.
-- **Demographics are core domain, Phoenix-native names:** `StudentDemographics` (one row per
-  student): `CensusBlockGroup` (12 digits, validated, optional) and
-  `AttendedPreviouslyAsAdult` (optional yes/no) plus whatever the live probe shows DS 6.1
-  requires alongside them. Ed-Fi shapes are mapped at the EdFi boundary only.
+- **Addresses and demographics are core domain, Phoenix-native names.** Ed-Fi shapes are
+  mapped at the EdFi boundary only. Addresses keep history (start / end dates); nothing is
+  deleted. The census block group is looked up from the physical address and can be
+  overridden by hand.
 - **Every view and change is audited** (ADR-004). New pages that read students load only
   when `RendererInfo.IsInteractive`.
 - **Nothing here needs real data.** The Flightdeck live read stays gated (ADR-003).
@@ -39,14 +40,15 @@ Architecture tests stay green. Value-based secret check after every `git add`.
 **Estimate:** 0.5-2 hrs
 
 ### Tasks
-- [ ] Run the sync once more live (Preview, Run). Expect 19 updated, 0 failed, PHX-000001
-      "Updated"; verify by SQL (two new SyncApply rows per student) and Ed-Fi GET.
-- [ ] If PHX-000001 fails with 403 on students: add the rule to the sync (skip the student
+- [x] Run the sync once more live (Preview, Run). DONE 2026-11-23 18:33 UTC: 19 updated,
+      0 failed; PHX-000001 "updated in Ed-Fi" with its only enrollment exited; verified by
+      SQL (19 send-started + 19 result rows) and Ed-Fi GET (19 SSAs, one exited).
+- [x] Not needed - no 403. (Was: if PHX-000001 fails with 403 on students, add the rule to the sync (skip the student
       write when every matching enrollment is exited and the student already exists, or the
-      order the live API accepts), model it in the test fake, re-run.
+      order the live API accepts), model it in the test fake, re-run.)
 
 ### Definition of Done
-- [ ] Result recorded in `docs\features\modules\EdFi.md`; build + tests green.
+- [x] Result recorded in `docs\features\modules\EdFi.md`; build + tests green.
 
 ---
 
@@ -92,47 +94,85 @@ Architecture tests stay green. Value-based secret check after every `git add`.
 
 ---
 
-## PHX-9.3: Adult demographics in Phoenix
+## PHX-9.3: Student addresses in Phoenix
 
 **Estimate:** 6-8 hrs
 
 ### Tasks
-- [ ] Probe live first: the DS 6.1 `studentDemographics` resource - natural key, required
-      fields, the exact shape of the census block group set and the adult previous attendance
-      set, and their descriptors. Record it in `docs\edfi\texas-sample.md`.
-- [ ] Core `Phoenix.Core\Students`: `StudentDemographicsRecord`, `IStudentDemographicsService`
-      (`GetAsync`, `SaveAsync`); rules (block group = 12 digits; Texas state FIPS 48 warned,
-      not enforced).
-- [ ] Infrastructure: `StudentDemographics` entity + migration `AddStudentDemographics`
-      (1:1 with Student, FK NO ACTION); every save audited in the same unit of work.
-- [ ] `StudentRecordPage.razor`: a Demographics card (view + edit) behind the `Students`
-      flag; the view is covered by the existing record View event.
-- [ ] Tests: rules, audit, round trip. Update `docs\features\modules\Students.md`.
+- [ ] Core `Phoenix.Core\Students`: `StudentAddressRecord`, `AddressKind` (Physical, Mailing),
+      `IStudentAddressService` (`GetForStudentAsync`, `AddAsync`, `EndAsync`). Fields follow
+      what DS 6.1 requires (probed 2026-11-23: address type, street number and name, city,
+      state, postal code) plus apartment / suite, county, latitude, longitude, start date
+      and end date.
+- [ ] Rules: one current address per kind per student; a new one ends the old one (history
+      is kept, nothing is deleted); state is a 2-letter code; postal code is 5 or 9 digits.
+- [ ] Infrastructure: `StudentAddress` entity + migration `AddStudentAddress` (FK NO ACTION);
+      every add and end audited in the same save. Audit summaries carry the kind only -
+      never the address.
+- [ ] `StudentRecordPage.razor`: an Addresses card (current + history, add, end) behind the
+      `Students` flag.
+- [ ] `SourceStudentRecord` may carry addresses; the Flightdeck sample emits one made-up
+      Fort Worth address per student. Tests + `docs\features\modules\Students.md`.
 
 ### Definition of Done
-- [ ] Demographics persist per student with rules enforced and audited; build + tests green.
+- [ ] Addresses persist with rules enforced and audited; build + tests green.
 
 ---
 
-## PHX-9.4: Demographics in the Ed-Fi sync
+## PHX-9.4: Addresses in the Ed-Fi sync (StudentDirectory)
 
 **Estimate:** 4-6 hrs
 
 ### Tasks
-- [ ] `IEdFiApiClient.UpsertStudentDemographicAsync` + payload built from the 9.3 probe;
-      Problem Details handled like the other writes.
-- [ ] `StudentSyncService`: send demographics after the enrollment (authorization order)
-      when the student has any; none -> nothing sent.
+- [ ] Probe live: `addressTypeDescriptors`, `stateAbbreviationDescriptors`, and whether
+      `studentDirectories` needs the enrollment first (authorization order). Record in
+      `docs\edfi\texas-sample.md`.
+- [ ] `IEdFiApiClient.UpsertStudentDirectoryAsync` + payload (natural key: student +
+      education organization; addresses with their periods). Problem Details as elsewhere.
+- [ ] `StudentSyncService`: send the directory after the enrollment when the student has a
+      current address; none -> nothing sent.
 - [ ] Test fake + tests: order, omitted when empty, failure names the resource and is audited.
-- [ ] Do one live write early to flush out authorization rules (Sprint 7 lesson).
+- [ ] One live write early to flush out authorization rules (Sprint 7 lesson).
 
 ### Definition of Done
-- [ ] Live: demographics for at least 3 sample students visible by GET with the values
-      entered in Phoenix; the sync run twice with 0 failures; build + tests green.
+- [ ] Live: the 6 Flightdeck students have a StudentDirectory with one address, verified by
+      GET; the sync run twice with 0 failures; build + tests green.
 
 ---
 
-## PHX-9.5: Adult-only SIS gap analysis (planning doc)
+## PHX-9.5: Adult demographics + automatic census block group
+
+**Estimate:** 7-10 hrs
+
+**Finding (probed 2026-11-23):** census block group and adult previous attendance are NOT in
+core Ed-Fi 6.1. nh-edfi-cus exposes one data model (Ed-Fi 6.1.0, 1223 schemas) and none
+mentions either. They are Texas elements and arrive with the TX extension (SDK 2028.0.0,
+Jan/Feb 2027). So this story stores them in Phoenix and does not send them yet.
+
+### Tasks
+- [ ] Core: `StudentDemographicsRecord` (`CensusBlockGroup` 12 digits, where it came from
+      (Lookup / Manual), when it was looked up; `AttendedPreviouslyAsAdult` yes / no /
+      unknown), `IStudentDemographicsService`.
+- [ ] Core `ICensusGeocoder` + Infrastructure implementation against the U.S. Census Bureau
+      geocoder (public, no key). Probe the live response first and record the request and
+      the field that holds the block group. Timeouts and "no match" are results, not errors.
+- [ ] Lookup runs when a physical address is added or changed and on a "Look up" button; a
+      manual value is never overwritten without a confirm. Behind a `Geocoding` config
+      switch, default OFF in base and ON in Phoenix-Dev.
+- [ ] Infrastructure: `StudentDemographics` entity + migration (1:1 with Student); saves
+      audited; the lookup itself is audited (that an address left Phoenix, not the address).
+- [ ] Demographics card on `StudentRecordPage.razor`. Tests use a fake geocoder.
+- [ ] `docs\features\modules\Students.md` + a note in ADR-003: a lookup sends the student's
+      address to a federal service, so it must be named in the data-sharing authorization
+      before it is used on real data.
+
+### Definition of Done
+- [ ] Adding a physical address for a sample student fills the block group; a manual
+      override sticks; build + tests green. Sending both elements to Ed-Fi is deferred to
+      the TX extension layer.
+
+---
+## PHX-9.6: Adult-only SIS gap analysis (planning doc)
 
 **Estimate:** 3-4 hrs
 
@@ -152,7 +192,7 @@ Architecture tests stay green. Value-based secret check after every `git add`.
 
 ---
 
-## PHX-9.6: Close
+## PHX-9.7: Close
 
 **Estimate:** 2 hrs
 
@@ -165,6 +205,7 @@ Architecture tests stay green. Value-based secret check after every `git add`.
 ## Open questions (do not block the sprint)
 - `ExitReason.NonAttendance` -> which Ed-Fi exit type (Patrick + Hailee).
 - Sync result-audit failure: warn (current) or throw.
-- Is the census block group entered by staff, or derived from an address? Phoenix has no
-  address model yet; this sprint assumes it is entered.
+- Phone, email and contacts are still missing from the student record (DS 6.1 carries them
+  on StudentDirectory and Contact). Not in this sprint.
+- Which education organization owns the StudentDirectory - the LEA or the campus? Default: LEA.
 - "Push data back" = TSDS or Flightdeck (open since ADR-003).

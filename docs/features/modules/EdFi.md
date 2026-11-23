@@ -118,7 +118,17 @@ Core Ed-Fi has no exact match ("No show" = never attended). Candidates: keep Wit
 **Exited students stay visible to the client (read probe 2026-11-20):** two students in
 the sandbox whose only enrollment has an `exitWithdrawDate` (605260, 605522 at 255901001)
 are still returned by `GET students` and `GET studentEducationOrganizationAssociations`.
-Write access for an exited student is proven in the PHX-8.5 live run.
+**Writes work too (PHX-9.0, 2026-11-23):** with PHX-000001's only enrollment exited on
+2026-11-20, a full sync run returned 200 for her student, enrollment, LEA association and
+identification code - 19 of 19 students "updated in Ed-Fi", 0 failed. No special rule for
+exited students is needed.
+
+**Not in core Ed-Fi 6.1 (probed 2026-11-23):** census block group and adult previous
+attendance. nh-edfi-cus exposes one data model (Ed-Fi 6.1.0, 1223 schemas) and no schema or
+property mentions either; `studentDemographics` has neither. They are Texas elements and
+arrive with the TX extension (SDK 2028.0.0). Addresses are core: `studentDirectories`
+(key: student + education organization) with `addresses` requiring address type, state,
+city, postal code and street number/name.
 
 **Order is forced by Ed-Fi authorization.** The enrollment must come straight after the
 student: relationship-based authorization only lets the client write the LEA association and
