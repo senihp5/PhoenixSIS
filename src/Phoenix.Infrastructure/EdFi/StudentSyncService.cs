@@ -148,7 +148,7 @@ public sealed class StudentSyncService : IStudentSyncService
             if (mappedId is null)
                 nextNumber++;
 
-            plans.Add(new SyncPlan(student, name, uniqueId, mappedId is null, writes, null));
+            plans.Add(new SyncPlan(student, name, uniqueId, mappedId is null, writes, null, FindStateId(student)));
         }
 
         await RecordAuditAsync(plans, apply, campusNumber, yearLabel, cancellationToken);
@@ -415,6 +415,22 @@ public sealed class StudentSyncService : IStudentSyncService
             if (!codeWrite.Success)
                 return Failed(student.Id, name, uniqueId, codeWrite);
 
+            // PHX-9.2: the state id (TSDS Unique ID), when Phoenix holds one for
+            // the student, goes as a second identification code. Never an SSN -
+            // the payload builder refuses the SSN system.
+            if (plan.StateId is not null)
+            {
+                var stateWrite = await _client.UpsertStudentIdentificationCodeAsync(
+                    new EdFiStudentIdentificationCodeWrite(
+                        uniqueId,
+                        target.LeaId,
+                        _options.StateIdentificationSystemDescriptor!,
+                        plan.StateId),
+                    cancellationToken);
+                if (!stateWrite.Success)
+                    return Failed(student.Id, name, uniqueId, stateWrite);
+            }
+
             return new StudentSyncRow(
                 student.Id, name, uniqueId,
                 studentWrite.Created ? StudentSyncOutcome.Created : StudentSyncOutcome.Updated);
@@ -474,6 +490,28 @@ public sealed class StudentSyncService : IStudentSyncService
         return max + 1;
     }
 
+    /// <summary>
+    /// The student's state id: the value of the mapped identifier whose source
+    /// system is EdFiApi:StateIdentifierSource. Null when either state setting
+    /// is blank or the student has no such identifier - then no state code is
+    /// sent, which is not a failure.
+    /// </summary>
+    private string? FindStateId(Student student)
+    {
+        if (string.IsNullOrWhiteSpace(_options.StateIdentifierSource)
+            || string.IsNullOrWhiteSpace(_options.StateIdentificationSystemDescriptor))
+        {
+            return null;
+        }
+
+        var value = student.Identifiers
+            .FirstOrDefault(i => string.Equals(
+                i.SourceSystem, _options.StateIdentifierSource, StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static string FormatUniqueId(int number) =>
         UniqueIdPrefix + number.ToString("D6", CultureInfo.InvariantCulture);
 
@@ -490,7 +528,8 @@ public sealed class StudentSyncService : IStudentSyncService
         string? UniqueId,
         bool IsNew,
         IReadOnlyList<EdFiEnrollmentWrite> Enrollments,
-        string? SkipReason)
+        string? SkipReason,
+        string? StateId = null)
     {
         public static SyncPlan Skip(Student student, string name, string? mappedId, string reason) =>
             new(student, name, mappedId, false, [], reason);

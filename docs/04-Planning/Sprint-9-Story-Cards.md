@@ -88,12 +88,20 @@ one of the six students and see four identifiers.
 **Estimate:** 3-4 hrs
 
 ### Tasks
-- [ ] Probe live: `studentIdentificationSystemDescriptors` (confirm the State value) and
+- [x] Probe live: `studentIdentificationSystemDescriptors` (confirm the State value) and
       whether a second identification code for the same student + LEA is accepted.
-- [ ] `EdFiApiOptions`: `StateIdentificationSystemDescriptor`, `StateIdentifierSource`.
-- [ ] `StudentSyncService`: after the Local code, send the State code when the student has
+- [x] `EdFiApiOptions`: `StateIdentificationSystemDescriptor`, `StateIdentifierSource`.
+- [x] `StudentSyncService`: after the Local code, send the State code when the student has
       the configured identifier; none -> nothing sent (not a failure). SSN guard unchanged.
-- [ ] Tests: sent when present, absent when not, order kept, failure names the resource.
+- [x] Tests: sent when present, absent when not, order kept, failure names the resource.
+
+**Built 2026-11-23 (code + tests; NOT yet run live).** Probe: the list has 12 identification systems
+including State (`uri://ed-fi.org/StudentIdentificationSystemDescriptor#State`); the natural key is
+student + education organization + system, so a second code is its own record (acceptance by the
+live API is proven by the first live run, not by the probe). Settings:
+`EdFiApi:StateIdentificationSystemDescriptor`, `EdFiApi:StateIdentifierSource`; blank either to send
+none. Live check owed, after the 9.1 import: sync Preview -> Run, then GET identification codes -
+the 6 Flightdeck students (PHX-000014..19) have Local + State, the other 13 have Local only.
 
 ### Definition of Done
 - [ ] Live: the 6 Flightdeck students have two identification codes in Ed-Fi (Local, State),

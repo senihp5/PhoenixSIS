@@ -419,6 +419,68 @@ public class StudentSyncServiceTests
     }
 
     [Fact]
+    public async Task State_id_is_sent_as_a_second_identification_code_when_the_student_has_one()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Ana", "Alvarez"), ("Ben", "Brooks"));
+        await TestSupport.Identity(db).AddIdentifierAsync(ids[0], "Flightdeck:StateStudentNumber", "9900100457");
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Equal(0, result.Failed);
+        var anaCodes = client.Calls
+            .Where(c => c.UniqueId == "PHX-000001" && c.Resource == "studentIdentificationCodes")
+            .Select(c => (EdFiStudentIdentificationCodeWrite)c.Payload)
+            .ToList();
+        Assert.Equal(2, anaCodes.Count);
+        Assert.Equal("uri://ed-fi.org/StudentIdentificationSystemDescriptor#Local", anaCodes[0].StudentIdentificationSystemDescriptor);
+        Assert.Equal("uri://ed-fi.org/StudentIdentificationSystemDescriptor#State", anaCodes[1].StudentIdentificationSystemDescriptor);
+        Assert.Equal("9900100457", anaCodes[1].IdentificationCode);
+        Assert.Equal(220822, anaCodes[1].EducationOrganizationId);
+        Assert.Single(client.Calls, c => c.UniqueId == "PHX-000002" && c.Resource == "studentIdentificationCodes");
+    }
+
+    [Fact]
+    public async Task State_id_is_not_sent_when_the_setting_is_blank()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Ana", "Alvarez"));
+        await TestSupport.Identity(db).AddIdentifierAsync(ids[0], "Flightdeck:StateStudentNumber", "9900100457");
+        var client = new FakeEdFiClient();
+        var svc = NewService(db, client, options: new EdFiApiOptions { StateIdentifierSource = "" });
+
+        await svc.SyncAllAsync(Target, apply: true);
+
+        Assert.Single(client.Calls, c => c.Resource == "studentIdentificationCodes");
+    }
+
+    [Fact]
+    public async Task State_id_failure_fails_the_student_and_names_the_resource()
+    {
+        await using var db = NewDb();
+        var ids = await SeedAsync(db, ("Ana", "Alvarez"));
+        await TestSupport.Identity(db).AddIdentifierAsync(ids[0], "Flightdeck:StateStudentNumber", "9900100457");
+        var problem = new EdFiProblem(
+            "urn:ed-fi:api:bad-request:data-validation-failed", "Data Validation Failed", 400,
+            "Rejected.", null, [], new Dictionary<string, IReadOnlyList<string>>());
+        var codeCalls = 0;
+        var client = new FakeEdFiClient
+        {
+            FailWhen = (resource, _) =>
+                resource == "studentIdentificationCodes" && ++codeCalls == 2 ? problem : null
+        };
+        var svc = NewService(db, client);
+
+        var result = await svc.SyncAllAsync(Target, apply: true);
+
+        var row = Assert.Single(result.Rows);
+        Assert.Equal(StudentSyncOutcome.Failed, row.Outcome);
+        Assert.Equal("studentIdentificationCodes", row.FailedResource);
+    }
+
+    [Fact]
     public async Task New_ids_continue_after_the_highest_mapped_number()
     {
         await using var db = NewDb();

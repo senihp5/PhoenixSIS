@@ -92,4 +92,17 @@ public sealed class EdFiApiOptions
 
     public string LocalIdentificationSystemDescriptor { get; set; } =
         "uri://ed-fi.org/StudentIdentificationSystemDescriptor#Local";
+
+    // PHX-9.2 state id (TSDS Unique ID) as a second identification code.
+    // The descriptor was read from the live nh-edfi-cus list on 2026-11-23.
+    // Blank either setting to send no state code.
+
+    public string? StateIdentificationSystemDescriptor { get; set; } =
+        "uri://ed-fi.org/StudentIdentificationSystemDescriptor#State";
+
+    /// <summary>
+    /// Source system of the mapped identifier that holds the state id
+    /// ("&lt;Source&gt;:&lt;Kind&gt;", see SourceIdentifier.SourceSystemFor).
+    /// </summary>
+    public string? StateIdentifierSource { get; set; } = "Flightdeck:StateStudentNumber";
 }

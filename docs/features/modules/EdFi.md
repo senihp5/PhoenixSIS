@@ -123,6 +123,11 @@ are still returned by `GET students` and `GET studentEducationOrganizationAssoci
 identification code - 19 of 19 students "updated in Ed-Fi", 0 failed. No special rule for
 exited students is needed.
 
+**State id (PHX-9.2).** After the Local code the sync sends a second StudentIdentificationCode,
+system `#State`, when the student has the mapped identifier named by
+`EdFiApi:StateIdentifierSource` (default `Flightdeck:StateStudentNumber`). No such identifier, or
+either state setting blank: nothing is sent and it is not a failure. Never an SSN.
+
 **Not in core Ed-Fi 6.1 (probed 2026-11-23):** census block group and adult previous
 attendance. nh-edfi-cus exposes one data model (Ed-Fi 6.1.0, 1223 schemas) and no schema or
 property mentions either; `studentDemographics` has neither. They are Texas elements and
